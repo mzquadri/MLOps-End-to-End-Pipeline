@@ -1,0 +1,19 @@
+# Deployment Configuration
+serving:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 2
+  model_path: "models/production"
+  max_batch_size: 32
+  timeout_seconds: 30
+
+monitoring:
+  enable_metrics: true
+  log_predictions: true
+  drift_check_interval: 3600  # seconds
+  alert_webhook: null
+
+docker:
+  image_name: "mlops-sentiment"
+  tag: "latest"
+  base_image: "python:3.11-slim"

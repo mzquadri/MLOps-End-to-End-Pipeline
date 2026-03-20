@@ -1,0 +1,50 @@
+# Data
+data/*.csv
+data/*.json
+data/*.zip
+data/raw/
+data/processed/
+
+# Models
+models/*.pkl
+models/*.joblib
+models/*/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# Results
+results/*.png
+results/*.html
+results/*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.dockerignore

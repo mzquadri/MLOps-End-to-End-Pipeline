@@ -1,0 +1,42 @@
+# Training Configuration
+experiment:
+  name: "sentiment-classification"
+  description: "TF-IDF + ML models for sentiment analysis"
+
+data:
+  source: "data/reviews.csv"
+  test_size: 0.2
+  random_state: 42
+  text_column: "review_text"
+  label_column: "sentiment"
+  max_features: 10000
+
+model:
+  type: "logistic_regression"  # logistic_regression, random_forest, svm
+  hyperparameters:
+    logistic_regression:
+      C: 1.0
+      max_iter: 1000
+      solver: "lbfgs"
+    random_forest:
+      n_estimators: 200
+      max_depth: 20
+      min_samples_split: 5
+    svm:
+      C: 1.0
+      kernel: "rbf"
+
+training:
+  cv_folds: 5
+  scoring: "f1_weighted"
+  early_stopping: false
+
+validation:
+  min_accuracy: 0.85
+  min_f1: 0.83
+  max_drift_psi: 0.2
+  max_latency_ms: 100
+
+mlflow:
+  tracking_uri: "sqlite:///mlruns.db"
+  registry_uri: "sqlite:///mlruns.db"
