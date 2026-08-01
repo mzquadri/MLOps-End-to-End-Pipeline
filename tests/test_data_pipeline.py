@@ -146,6 +146,18 @@ class TestDataValidator:
         result = validator.check_class_balance(sample_df["sentiment"])
         assert result["passed"] is True
 
+    def test_all_checks_fail_when_a_check_fails(self, sample_config):
+        from src.data_pipeline import DataValidator
+
+        df = pd.DataFrame(
+            {
+                "review_text": [None] * 10,
+                "sentiment": ["positive"] * 10,
+            }
+        )
+        result = DataValidator(sample_config).run_all_checks(df, "sentiment")
+        assert result["overall_passed"] is False
+
     def test_psi_identical_distributions(self, sample_config):
         from src.data_pipeline import DataValidator
 

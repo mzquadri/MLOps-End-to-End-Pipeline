@@ -100,7 +100,7 @@ class DataValidator:
         counts = labels.value_counts(normalize=True)
         min_class_pct = counts.min()
         return {
-            "passed": min_class_pct >= min_ratio,
+            "passed": bool(min_class_pct >= min_ratio),
             "class_distribution": counts.to_dict(),
             "min_class_percentage": round(min_class_pct, 4),
         }
@@ -159,13 +159,19 @@ class DataValidator:
 
     def run_all_checks(self, df: pd.DataFrame, label_col: str) -> Dict[str, Any]:
         """Execute all data quality checks."""
+        null_check = self.check_nulls(df)
+        duplicate_check = self.check_duplicates(df)
+        class_balance = (
+            self.check_class_balance(df[label_col]) if label_col in df.columns else None
+        )
+        checks = [null_check, duplicate_check]
+        if class_balance is not None:
+            checks.append(class_balance)
         return {
-            "null_check": self.check_nulls(df),
-            "duplicate_check": self.check_duplicates(df),
-            "class_balance": self.check_class_balance(df[label_col])
-            if label_col in df.columns
-            else None,
-            "overall_passed": True,  # updated below
+            "null_check": null_check,
+            "duplicate_check": duplicate_check,
+            "class_balance": class_balance,
+            "overall_passed": all(check["passed"] for check in checks),
         }
 
 

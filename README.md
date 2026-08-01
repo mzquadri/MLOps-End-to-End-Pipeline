@@ -1,6 +1,8 @@
 # MLOps End-to-End Pipeline
 
-Production-grade MLOps pipeline demonstrating experiment tracking, model versioning, automated validation, and deployment-ready packaging. Built with MLflow, DVC concepts, and CI/CD-ready architecture.
+MLOps reference implementation for a sentiment-classification demonstration. It includes experiment tracking, hash-based data manifests, validation gates, local model versioning, FastAPI serving, Docker packaging, and automated tests.
+
+> **Scope:** This is an educational/demo pipeline. When no review dataset is supplied, it deterministically generates synthetic sentiment text. It is not a deployed production system, and no production accuracy or deployment outcome is claimed.
 
 ## Project Overview
 
@@ -11,7 +13,7 @@ This project implements a complete MLOps lifecycle for a text classification tas
 - **Model Registry**: Version-controlled model storage with stage management (staging/production)
 - **Automated Validation**: Data quality checks, model performance gates, and drift detection
 - **Deployment Packaging**: Docker-ready FastAPI inference service
-- **CI/CD Pipeline**: GitHub Actions workflow for automated testing and deployment
+- **Continuous Integration**: GitHub Actions runs the test suite on pushes and pull requests
 
 ## Project Structure
 
@@ -85,7 +87,7 @@ docker-compose up --build
 | Serving | FastAPI | REST API with health checks, batch prediction |
 | Containerization | Docker | Reproducible deployment packaging |
 | Testing | pytest | Unit + integration tests |
-| CI/CD | GitHub Actions | Automated test → train → validate → deploy |
+| Continuous Integration | GitHub Actions | Automated test suite on pushes and pull requests |
 
 ## Pipeline Architecture
 
@@ -111,11 +113,20 @@ docker-compose up --build
 
 ## Key Features
 
-- **Reproducible Experiments**: Every training run is logged with full parameter and metric history
+- **Experiment Tracking**: Training logs parameters, metrics, and artifacts to the configured MLflow store
 - **Data Drift Detection**: Statistical tests (KS-test, PSI) to detect distribution shifts
 - **Performance Gates**: Automatic promotion/rejection based on accuracy and fairness thresholds
-- **Model Lineage**: Full traceability from data version → training run → deployed model
-- **Health Monitoring**: API health checks and prediction latency tracking
+- **Model Lineage**: Hash-based data manifests and local model-registry metadata support demo-run traceability
+- **Service Instrumentation**: API health checks and in-process prediction latency tracking
+
+## Verification
+
+```bash
+pip install -r requirements.txt
+python -m pytest -q
+```
+
+The repository does not version a dataset, model, or evaluation report. Running the data pipeline without `data/reviews.csv` uses deterministic synthetic demo data; provide a licensed real dataset before treating any model metric as meaningful.
 
 ## Technical Stack
 

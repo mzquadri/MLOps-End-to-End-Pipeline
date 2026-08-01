@@ -63,18 +63,20 @@ class ModelEvaluator:
         # ROC-AUC for binary classification
         unique_classes = np.unique(y_test)
         if len(unique_classes) == 2 and hasattr(self.model, "predict_proba"):
+            positive_class = self.model.classes_[1]
+            y_binary = y_test == positive_class
             y_proba = self.model.predict_proba(X_test)[:, 1]
-            metrics["roc_auc"] = float(roc_auc_score(y_test, y_proba))
+            metrics["roc_auc"] = float(roc_auc_score(y_binary, y_proba))
 
             # ROC curve points
-            fpr, tpr, thresholds = roc_curve(y_test, y_proba)
+            fpr, tpr, thresholds = roc_curve(y_binary, y_proba)
             metrics["roc_curve"] = {
                 "fpr": fpr.tolist(),
                 "tpr": tpr.tolist(),
             }
 
             # Precision-Recall curve
-            prec, rec, pr_thresh = precision_recall_curve(y_test, y_proba)
+            prec, rec, pr_thresh = precision_recall_curve(y_binary, y_proba)
             metrics["pr_curve"] = {
                 "precision": prec.tolist(),
                 "recall": rec.tolist(),
