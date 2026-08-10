@@ -1,123 +1,67 @@
 # MLOps End-to-End Pipeline
 
-MLOps reference implementation for a sentiment-classification demonstration. It includes experiment tracking, hash-based data manifests, validation gates, local model versioning, FastAPI serving, Docker packaging, and automated tests.
+Training a model in a notebook is the easy part. The hard part is everything around it:
+knowing exactly which data produced which model, refusing to ship a model that does not
+meet the bar, and serving it in a way you can reproduce six months later. This repo is a
+complete, runnable implementation of that lifecycle for a text-classification task
+(sentiment analysis) — the same machinery a production ML team would use, small enough
+to read in an afternoon.
 
-> **Scope:** This is an educational/demo pipeline. When no review dataset is supplied, it deterministically generates synthetic sentiment text. It is not a deployed production system, and no production accuracy or deployment outcome is claimed.
+> **Scope:** this is a reference pipeline, not a deployed product. When no dataset is
+> supplied it deterministically generates synthetic review text, so every step runs
+> end-to-end with zero setup. No production accuracy claim is made — point it at a real,
+> licensed dataset before reading anything into the metrics.
 
-## Project Overview
+## The lifecycle
 
-This project implements a complete MLOps lifecycle for a text classification task (sentiment analysis), showcasing industry best practices for:
+![Pipeline](docs/diagrams/pipeline.svg)
 
-- **Experiment Tracking**: MLflow-based logging of parameters, metrics, and artifacts
-- **Data Versioning**: DVC-inspired data pipeline with hash-based tracking
-- **Model Registry**: Version-controlled model storage with stage management (staging/production)
-- **Automated Validation**: Data quality checks, model performance gates, and drift detection
-- **Deployment Packaging**: Docker-ready FastAPI inference service
-- **Continuous Integration**: GitHub Actions runs the test suite on pushes and pull requests
-
-## Project Structure
-
-```
-MLOps-End-to-End-Pipeline/
-├── README.md
-├── requirements.txt
-├── .gitignore
-├── Dockerfile
-├── docker-compose.yml
-├── configs/
-│   ├── train_config.yaml        # Training hyperparameters
-│   └── deploy_config.yaml       # Deployment configuration
-├── src/
-│   ├── __init__.py
-│   ├── data_pipeline.py         # Data loading, validation, versioning
-│   ├── feature_store.py         # Feature computation and caching
-│   ├── train.py                 # Training with MLflow experiment tracking
-│   ├── evaluate.py              # Model evaluation and performance gates
-│   ├── model_registry.py        # Model versioning and stage management
-│   └── serve.py                 # FastAPI inference service
-├── tests/
-│   ├── test_data_pipeline.py    # Data pipeline unit tests
-│   ├── test_model.py            # Model training/inference tests
-│   └── test_api.py              # API endpoint tests
-├── notebooks/
-│   └── 01_MLOps_Walkthrough.ipynb
-├── data/                        # Dataset directory
-├── models/                      # Saved model artifacts
-└── results/                     # Evaluation reports
-```
-
-## Quick Start
+Each stage is a small CLI tool that can also be imported as a library:
 
 ```bash
-# Clone the repository
-git clone https://github.com/mzquadri/MLOps-End-to-End-Pipeline.git
-cd MLOps-End-to-End-Pipeline
-
-# Install dependencies
 pip install -r requirements.txt
 
-# Run data pipeline
-python src/data_pipeline.py --config configs/train_config.yaml
+python src/data_pipeline.py  --config configs/train_config.yaml     # validate + version data
+python src/train.py          --config configs/train_config.yaml     # train + log to MLflow
+python src/evaluate.py       --model_path models/latest             # metrics + quality gate
+python src/model_registry.py --register --stage production          # promote the model
+python src/serve.py          --model_path models/production         # FastAPI on :8000
 
-# Train with experiment tracking
-python src/train.py --config configs/train_config.yaml --experiment "sentiment-v1"
-
-# Evaluate and validate
-python src/evaluate.py --model_path models/latest --threshold 0.85
-
-# Register model
-python src/model_registry.py --register --stage production
-
-# Serve model (local)
-python src/serve.py --model_path models/production
-# API available at http://127.0.0.1:8000
-
-# Docker deployment
+# or the whole thing, containerized:
 docker-compose up --build
 ```
 
-## MLOps Components
+## What each component actually does
 
-| Component | Tool/Approach | Description |
-|-----------|--------------|-------------|
-| Experiment Tracking | MLflow | Log params, metrics, artifacts per run |
-| Data Versioning | Hash-based (DVC-like) | Track dataset versions via content hashing |
-| Model Registry | MLflow + custom | Stage management: None → Staging → Production |
-| Validation Gates | Custom | Min accuracy, max drift thresholds |
-| Serving | FastAPI | REST API with health checks, batch prediction |
-| Containerization | Docker | Reproducible deployment packaging |
-| Testing | pytest | Unit + integration tests |
-| Continuous Integration | GitHub Actions | Automated test suite on pushes and pull requests |
+| Component | Implementation | Why it matters |
+|---|---|---|
+| Data versioning | SHA-256 content hash + JSON manifest per version | every model traceable to the exact rows that trained it |
+| Data validation | nulls, duplicates, class balance, drift (KS-test + PSI) | catch bad data before it silently becomes a bad model |
+| Feature store | TF-IDF transformers fitted once, cached, reused at serve time | train/serve skew eliminated by construction |
+| Experiment tracking | MLflow (params, metrics, model artifact per run) | compare runs, reproduce the best one |
+| Quality gate | configurable min-accuracy threshold | a model that fails the gate is never promoted |
+| Model registry | versioned local registry, stages none → staging → production | explicit, auditable promotion |
+| Serving | FastAPI: `/predict`, `/predict/batch`, `/health` with latency + prediction logging | observable inference service |
+| CI | GitHub Actions runs the pytest suite on every push and PR | the pipeline itself is tested like software |
 
-## Pipeline Architecture
+## Repository layout
 
 ```
-[Raw Data] → [Data Pipeline] → [Feature Store] → [Training]
-                    ↓                                  ↓
-            [Data Validation]              [MLflow Experiment Tracking]
-                                                       ↓
-                                             [Model Evaluation]
-                                                       ↓
-                                              [Performance Gate]
-                                                   ↓     ↓
-                                               PASS      FAIL → Alert
-                                                 ↓
-                                         [Model Registry]
-                                                 ↓
-                                    [Staging → Production]
-                                                 ↓
-                                       [FastAPI Service]
-                                                 ↓
-                                         [Docker Deploy]
+MLOps-End-to-End-Pipeline/
+├── src/
+│   ├── data_pipeline.py     # load, clean, validate, hash-version the data
+│   ├── feature_store.py     # TF-IDF features, cached transformers
+│   ├── train.py             # model factory (LR / RF / SVM), CV, MLflow logging
+│   ├── evaluate.py          # metrics, ROC/PR curves, quality gates
+│   ├── model_registry.py    # versioned registry with stage management
+│   └── serve.py             # FastAPI inference service
+├── configs/                 # train + deploy configuration (YAML)
+├── tests/                   # data-pipeline, model, and API tests
+├── notebooks/               # guided walkthrough of the whole flow
+├── docs/diagrams/           # architecture diagrams
+├── Dockerfile, docker-compose.yml
+└── .github/workflows/       # CI: pytest on push/PR
 ```
-
-## Key Features
-
-- **Experiment Tracking**: Training logs parameters, metrics, and artifacts to the configured MLflow store
-- **Data Drift Detection**: Statistical tests (KS-test, PSI) to detect distribution shifts
-- **Performance Gates**: Automatic promotion/rejection based on accuracy and fairness thresholds
-- **Model Lineage**: Hash-based data manifests and local model-registry metadata support demo-run traceability
-- **Service Instrumentation**: API health checks and in-process prediction latency tracking
 
 ## Verification
 
@@ -126,28 +70,16 @@ pip install -r requirements.txt
 python -m pytest -q
 ```
 
-The repository does not version a dataset, model, or evaluation report. Running the data pipeline without `data/reviews.csv` uses deterministic synthetic demo data; provide a licensed real dataset before treating any model metric as meaningful.
+No dataset, model, or evaluation report is versioned in the repo — running the data
+pipeline without `data/reviews.csv` uses the deterministic synthetic demo data.
 
-## Technical Stack
+## Tech stack
 
-- **ML**: scikit-learn, TF-IDF
-- **MLOps**: MLflow, DVC concepts
-- **API**: FastAPI, Uvicorn, Pydantic
-- **Containerization**: Docker, docker-compose
-- **Testing**: pytest
-- **Configuration**: PyYAML, Hydra-style configs
-
-## Alignment with Experience
-
-This project reflects MLOps engineering practices from **BP-ITCS**, including:
-- Experiment tracking and model versioning for production ML systems
-- CI/CD pipeline design for automated model training and deployment
-- Containerized model serving for enterprise applications
-- Data validation and monitoring for reliability
+scikit-learn · MLflow · FastAPI · Docker · pytest · PyYAML
 
 ## Author
 
-**Mohd Zamin Quadri** - M.Sc. Mathematics in Science and Engineering, Technical University of Munich
+**Mohd Zamin Quadri** — M.Sc. Mathematics in Science and Engineering, Technical University of Munich
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-mohd--zamin-blue)](https://www.linkedin.com/in/mohd-zamin/)
 [![GitHub](https://img.shields.io/badge/GitHub-mzquadri-black)](https://github.com/mzquadri)
