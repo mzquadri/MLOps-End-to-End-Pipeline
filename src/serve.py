@@ -5,19 +5,20 @@ FastAPI inference service with health checks, batch prediction,
 and prediction logging.  Designed for Docker deployment.
 
 Usage:
-    python src/serve.py --model_path models/production
+    python -m src.serve --bundle_path models/registry/sentiment-classifier/v1
     # Then visit http://127.0.0.1:8000/docs for interactive API docs.
 """
 
 import argparse
+import json
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import joblib
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -42,7 +43,7 @@ class PredictRequest(BaseModel):
 
 
 class BatchPredictRequest(BaseModel):
-    texts: List[str] = Field(..., min_items=1, max_items=100)
+    texts: List[str] = Field(..., min_length=1, max_length=100)
 
 
 class PredictResponse(BaseModel):
@@ -76,74 +77,84 @@ class AppState:
 
     def __init__(self) -> None:
         self.model: Optional[Any] = None
-        self.feature_transformers: Optional[Dict[str, Any]] = None
+        self.feature_store: Optional[Any] = None
         self.model_version: str = "unknown"
         self.start_time: float = time.time()
         self.prediction_count: int = 0
         self.prediction_log: List[Dict[str, Any]] = []
 
-    def load(self, model_path: str) -> None:
-        model_file = os.path.join(model_path, "model.joblib")
-        if not os.path.exists(model_file):
-            raise FileNotFoundError(f"Model file not found: {model_file}")
+    @property
+    def ready(self) -> bool:
+        return self.model is not None and self.feature_store is not None
 
-        self.model = joblib.load(model_file)
-        logger.info("Model loaded from %s", model_file)
+    def load(self, bundle_path: str) -> None:
+        """Load one complete, passing bundle from a trusted local registry."""
+        from src.feature_store import FeatureStore
+        from src.model_bundle import LINEAGE_FILE, load_trusted_bundle, read_bundle_json
 
-        # Load feature transformers
-        transformers_path = os.path.join("models", "feature_transformers.pkl")
-        if os.path.exists(transformers_path):
-            import pickle
+        self.model = None
+        self.feature_store = None
+        bundle = Path(bundle_path).resolve()
+        if len(bundle.parents) < 2:
+            raise RuntimeError("Production bundle path is not inside a registry")
+        registry_root = bundle.parents[1]
+        index_path = registry_root / "registry.json"
+        if not index_path.is_file():
+            raise RuntimeError("Production registry index is missing")
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        relative_bundle = bundle.relative_to(registry_root).as_posix()
+        entries = [
+            entry
+            for model in index.get("models", {}).values()
+            for entry in model.get("versions", [])
+            if entry.get("bundle_path") == relative_bundle
+        ]
+        if len(entries) != 1 or entries[0].get("stage") != "production":
+            raise RuntimeError("Serving requires a production registry bundle")
 
-            with open(transformers_path, "rb") as f:
-                self.feature_transformers = pickle.load(f)
-            logger.info("Feature transformers loaded.")
+        model, transformers, _ = load_trusted_bundle(
+            str(bundle), require_gate_passed=True
+        )
+        lineage = read_bundle_json(str(bundle), LINEAGE_FILE)
+        schema = lineage.get("feature_schema", {})
+        config = {
+            "data": {
+                "label_column": schema.get("label_column", "sentiment"),
+                "text_column": schema.get("text_column", "review_text"),
+            }
+        }
+        feature_store = FeatureStore(config)
+        feature_store.import_transformers(transformers)
 
-        # Read version from metrics if available
-        metrics_file = os.path.join(model_path, "metrics.json")
-        if os.path.exists(metrics_file):
-            import json
-
-            with open(metrics_file) as f:
-                metrics = json.load(f)
-            self.model_version = f"acc={metrics.get('accuracy', '?'):.4f}"
-        else:
-            self.model_version = "latest"
+        self.model = model
+        self.feature_store = feature_store
+        self.model_version = bundle.name
+        logger.info("Validated production model bundle loaded from %s", bundle)
 
     def predict_single(
         self, text: str, numeric_values: Optional[Dict[str, float]] = None
     ) -> Dict[str, Any]:
         """Run prediction on a single text input."""
-        from src.data_pipeline import preprocess_text
+        if not self.ready:
+            raise RuntimeError("A complete model bundle is not loaded.")
 
-        if self.model is None or self.feature_transformers is None:
-            raise RuntimeError("Model or transformers not loaded.")
-
-        clean = preprocess_text(text)
-        tfidf = self.feature_transformers["tfidf"]
-        scaler = self.feature_transformers.get("scaler")
-        metadata = self.feature_transformers.get("metadata", {})
-
-        X_tfidf = tfidf.transform([clean])
-
-        # Add numeric features if scaler exists and columns are known
-        numeric_cols = metadata.get("numeric_columns", [])
-        if scaler is not None and numeric_cols:
-            num_arr = np.array(
-                [[(numeric_values or {}).get(c, 0) for c in numeric_cols]]
-            )
-            X_num = scaler.transform(num_arr)
-            from scipy.sparse import csr_matrix, hstack
-
-            X = hstack([X_tfidf, csr_matrix(X_num)])
-        else:
-            X = X_tfidf
+        model = self.model
+        feature_store = self.feature_store
+        if model is None or feature_store is None:
+            raise RuntimeError("A complete model bundle is not loaded.")
+        values = dict(numeric_values or {})
+        numeric_columns = feature_store.metadata.get("numeric_columns", [])
+        if "review_length" in numeric_columns and "review_length" not in values:
+            values["review_length"] = len(text)
+        if "word_count" in numeric_columns and "word_count" not in values:
+            values["word_count"] = len(text.split())
+        X = feature_store.transform_single(text, values)
 
         t0 = time.perf_counter()
-        prediction = self.model.predict(X)[0]
+        prediction = model.predict(X)[0]
         confidence = 0.0
-        if hasattr(self.model, "predict_proba"):
-            proba = self.model.predict_proba(X)[0]
+        if hasattr(model, "predict_proba"):
+            proba = model.predict_proba(X)[0]
             confidence = float(max(proba))
         latency_ms = (time.perf_counter() - t0) * 1000
 
@@ -165,13 +176,10 @@ state = AppState()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Load model on startup."""
-    model_path = os.environ.get("MODEL_PATH", "models/production")
-    if not os.path.exists(os.path.join(model_path, "model.joblib")):
-        model_path = "models/latest"
-    try:
-        state.load(model_path)
-    except FileNotFoundError:
-        logger.warning("No model found at startup. Load manually or retrain.")
+    bundle_path = os.environ.get(
+        "MODEL_BUNDLE_PATH", "models/registry/sentiment-classifier/v1"
+    )
+    state.load(bundle_path)
     yield
 
 
@@ -187,8 +195,8 @@ app = FastAPI(
 async def health():
     """Health check endpoint for monitoring and Docker HEALTHCHECK."""
     return HealthResponse(
-        status="healthy" if state.model is not None else "degraded",
-        model_loaded=state.model is not None,
+        status="healthy" if state.ready else "degraded",
+        model_loaded=state.ready,
         model_version=state.model_version,
         uptime_seconds=round(time.time() - state.start_time, 1),
         total_predictions=state.prediction_count,
@@ -198,7 +206,7 @@ async def health():
 @app.post("/predict", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     """Predict sentiment for a single text."""
-    if state.model is None:
+    if not state.ready:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     numeric_values = {}
@@ -231,7 +239,7 @@ async def predict(request: PredictRequest):
 @app.post("/predict/batch", response_model=BatchPredictResponse)
 async def predict_batch(request: BatchPredictRequest):
     """Predict sentiment for multiple texts."""
-    if state.model is None:
+    if not state.ready:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     t0 = time.perf_counter()
@@ -272,12 +280,12 @@ async def metrics():
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run FastAPI inference server")
-    parser.add_argument("--model_path", type=str, default="models/production")
+    parser.add_argument("--bundle_path", type=str, required=True)
     parser.add_argument("--host", type=str, default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
-    os.environ["MODEL_PATH"] = args.model_path
+    os.environ["MODEL_BUNDLE_PATH"] = args.bundle_path
     import uvicorn
 
     uvicorn.run(

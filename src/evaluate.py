@@ -5,19 +5,18 @@ Model evaluation with performance gates, fairness checks, and detailed
 reporting. Determines whether a model is ready for promotion.
 
 Usage:
-    python src/evaluate.py --model_path models/latest --threshold 0.85
+    python -m src.evaluate --bundle_path models/candidates/sentiment-classifier
 """
 
 import argparse
+import copy
 import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
-import joblib
 import numpy as np
-import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -177,6 +176,26 @@ def generate_report(
     return path
 
 
+def build_evaluation_report(
+    metrics: Dict[str, Any],
+    latency: Dict[str, float],
+    gate_result: Dict[str, Any],
+    data_hash: str,
+) -> Dict[str, Any]:
+    """Build the deterministic report embedded in the evaluated bundle."""
+    return {
+        "data_hash": data_hash,
+        "evaluation_status": "passed"
+        if gate_result["overall_passed"]
+        else "failed",
+        "latency": latency,
+        "metrics": {
+            k: v for k, v in metrics.items() if k not in ("roc_curve", "pr_curve")
+        },
+        "performance_gate": gate_result,
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
@@ -186,7 +205,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Evaluate model and enforce performance gates"
     )
-    parser.add_argument("--model_path", type=str, default="models/latest")
+    parser.add_argument(
+        "--bundle_path",
+        type=str,
+        default="models/candidates/sentiment-classifier",
+    )
     parser.add_argument(
         "--threshold", type=float, default=0.85, help="Min accuracy threshold"
     )
@@ -203,16 +226,37 @@ def main() -> None:
         config["validation"] = {}
     config["validation"]["min_accuracy"] = args.threshold
 
-    # Load model
-    model = joblib.load(os.path.join(args.model_path, "model.joblib"))
-    logger.info("Loaded model from %s", args.model_path)
+    from src.model_bundle import (
+        LINEAGE_FILE,
+        load_trusted_bundle,
+        read_bundle_json,
+        update_evaluation_report,
+    )
+
+    # Validate checksums before loading trusted local pickle-capable artifacts.
+    model, transformers, manifest = load_trusted_bundle(args.bundle_path)
+    lineage = read_bundle_json(args.bundle_path, LINEAGE_FILE)
+    logger.info("Loaded candidate bundle from %s", args.bundle_path)
 
     # Rebuild test data
     from src.data_pipeline import load_and_preprocess
     from src.feature_store import FeatureStore
 
-    df, _ = load_and_preprocess(config)
-    label_col = config["data"].get("label_column", "sentiment")
+    schema = lineage["feature_schema"]
+    split = lineage["split"]
+    evaluation_config = copy.deepcopy(config)
+    evaluation_config.setdefault("data", {})
+    evaluation_config["data"]["label_column"] = schema["label_column"]
+    evaluation_config["data"]["text_column"] = schema["text_column"]
+    evaluation_config["data"]["random_state"] = split["random_state"]
+    evaluation_config["data"]["test_size"] = split["test_size"]
+
+    df, data_hash = load_and_preprocess(evaluation_config)
+    if lineage.get("data_hash") != data_hash:
+        raise RuntimeError(
+            "Evaluation data hash does not match the candidate bundle lineage"
+        )
+    label_col = schema["label_column"]
     y = df[label_col].values
 
     from sklearn.model_selection import train_test_split
@@ -220,15 +264,21 @@ def main() -> None:
     _, df_test, _, y_test = train_test_split(
         df,
         y,
-        test_size=config["data"].get("test_size", 0.2),
-        random_state=config["data"].get("random_state", 42),
+        test_size=split["test_size"],
+        random_state=split["random_state"],
         stratify=y,
     )
+    expected_rows = lineage.get("evaluation_rows")
+    if expected_rows is not None and len(df_test) != expected_rows:
+        raise RuntimeError("Evaluation row count does not match bundle lineage")
 
-    store = FeatureStore(config)
-    store.load_transformers()
-    # Only transform test set
-    _, X_test = store.get_features(df_test, df_test, use_cache=False)
+    store = FeatureStore(evaluation_config)
+    store.import_transformers(transformers)
+    X_test = store.transform(df_test)
+    if X_test.shape[1] != manifest["expected_feature_dimension"]:
+        raise RuntimeError(
+            "Evaluation feature dimension does not match bundle manifest"
+        )
 
     evaluator = ModelEvaluator(model, config)
     metrics = evaluator.compute_metrics(X_test, y_test)
@@ -237,13 +287,15 @@ def main() -> None:
     gate = PerformanceGate(config)
     gate_result = gate.evaluate(metrics, latency)
 
-    report_path = generate_report(metrics, latency, gate_result)
+    report = build_evaluation_report(metrics, latency, gate_result, data_hash)
+    update_evaluation_report(args.bundle_path, report)
 
     if gate_result["overall_passed"]:
         logger.info("PASSED all performance gates. Model is ready for promotion.")
     else:
         failed = [k for k, v in gate_result["checks"].items() if not v["passed"]]
-        logger.warning("FAILED gates: %s. Model NOT promoted.", failed)
+        logger.error("FAILED gates: %s. Candidate is not promotable.", failed)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

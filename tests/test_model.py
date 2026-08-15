@@ -7,8 +7,74 @@ import tempfile
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
+
+
+def create_passing_bundle(path):
+    """Create a small trusted bundle for registry tests."""
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.linear_model import LogisticRegression
+
+    from src.model_bundle import create_candidate_bundle, update_evaluation_report
+
+    texts = ["great product", "excellent item", "bad product", "awful item"]
+    labels = ["positive", "positive", "negative", "negative"]
+    tfidf = TfidfVectorizer()
+    X = tfidf.fit_transform(texts)
+    model = LogisticRegression(max_iter=100).fit(X, labels)
+    create_candidate_bundle(
+        str(path),
+        model,
+        {
+            "tfidf": tfidf,
+            "scaler": None,
+            "metadata": {"numeric_columns": [], "total_features": X.shape[1]},
+        },
+        {"accuracy": 1.0, "f1_weighted": 1.0},
+        {
+            "data_hash": "test-data",
+            "feature_schema": {
+                "label_column": "sentiment",
+                "numeric_columns": [],
+                "text_column": "review_text",
+            },
+            "split": {
+                "random_state": 42,
+                "stratified": True,
+                "test_size": 0.2,
+            },
+        },
+        X.shape[1],
+    )
+    update_evaluation_report(
+        str(path),
+        {
+            "data_hash": "test-data",
+            "evaluation_status": "passed",
+            "metrics": {"accuracy": 1.0, "f1_weighted": 1.0},
+            "latency": {"p95_latency_ms": 1.0},
+            "performance_gate": {
+                "overall_passed": True,
+                "checks": {
+                    "accuracy": {
+                        "value": 1.0,
+                        "threshold": 0.5,
+                        "passed": True,
+                    },
+                    "f1_weighted": {
+                        "value": 1.0,
+                        "threshold": 0.5,
+                        "passed": True,
+                    },
+                    "latency_p95": {
+                        "value": 1.0,
+                        "threshold": 500.0,
+                        "passed": True,
+                    },
+                },
+            },
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -281,17 +347,11 @@ class TestModelRegistry:
             tempfile.TemporaryDirectory() as reg_dir,
             tempfile.TemporaryDirectory() as model_dir,
         ):
-            # Create a dummy model file
-            import joblib
-            from sklearn.linear_model import LogisticRegression
-
-            m = LogisticRegression()
-            m.fit([[1], [2]], [0, 1])
-            joblib.dump(m, f"{model_dir}/model.joblib")
+            create_passing_bundle(model_dir)
 
             registry = LocalModelRegistry(registry_dir=reg_dir)
             v = registry.register_model(
-                "test-model", model_dir, {"accuracy": 0.9}, stage="staging"
+                "test-model", model_dir, stage="staging"
             )
             assert v == "v1"
 
@@ -308,16 +368,11 @@ class TestModelRegistry:
             tempfile.TemporaryDirectory() as reg_dir,
             tempfile.TemporaryDirectory() as model_dir,
         ):
-            import joblib
-            from sklearn.linear_model import LogisticRegression
-
-            m = LogisticRegression()
-            m.fit([[1], [2]], [0, 1])
-            joblib.dump(m, f"{model_dir}/model.joblib")
+            create_passing_bundle(model_dir)
 
             registry = LocalModelRegistry(registry_dir=reg_dir)
             registry.register_model(
-                "test-model", model_dir, {"accuracy": 0.9}, stage="staging"
+                "test-model", model_dir, stage="staging"
             )
             registry.transition_stage("test-model", "v1", "production")
 

@@ -6,13 +6,12 @@ and hyperparameter logging.  Supports Logistic Regression, Random Forest,
 and SVM classifiers for the sentiment-analysis demo task.
 
 Usage:
-    python src/train.py --config configs/train_config.yaml --experiment sentiment-v1
+    python -m src.train --config configs/train_config.yaml --experiment sentiment-v1
 """
 
 import argparse
 import json
 import logging
-import os
 import time
 from typing import Any, Dict, Optional, Tuple
 
@@ -22,7 +21,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
-    classification_report,
     f1_score,
     precision_score,
     recall_score,
@@ -185,25 +183,6 @@ def _try_mlflow_log(
 
 
 # ---------------------------------------------------------------------------
-# Persistence
-# ---------------------------------------------------------------------------
-
-
-def save_model(
-    model: Any, metrics: Dict[str, Any], path: str = "models/latest"
-) -> None:
-    """Save trained model and metrics to disk."""
-    import joblib
-
-    os.makedirs(path, exist_ok=True)
-    joblib.dump(model, os.path.join(path, "model.joblib"))
-
-    with open(os.path.join(path, "metrics.json"), "w") as f:
-        json.dump(metrics, f, indent=2)
-    logger.info("Model and metrics saved → %s", path)
-
-
-# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -212,6 +191,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train model with experiment tracking")
     parser.add_argument("--config", type=str, default="configs/train_config.yaml")
     parser.add_argument("--experiment", type=str, default=None)
+    parser.add_argument(
+        "--bundle_path",
+        type=str,
+        default="models/candidates/sentiment-classifier",
+        help="Candidate bundle directory",
+    )
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -220,6 +205,7 @@ def main() -> None:
     # Import sibling modules
     from src.data_pipeline import load_and_preprocess
     from src.feature_store import FeatureStore
+    from src.model_bundle import create_candidate_bundle
 
     # Data
     df, data_hash = load_and_preprocess(config)
@@ -236,16 +222,46 @@ def main() -> None:
     # Features
     store = FeatureStore(config)
     X_train, X_test = store.get_features(df_train, df_test, use_cache=False)
-    store.save_transformers()
 
     # Train
     model, metrics = train_model(
         X_train, y_train, X_test, y_test, config, args.experiment
     )
-    save_model(model, metrics)
+
+    model_type = config["model"]["type"]
+    bundle_path = args.bundle_path
+    lineage = {
+        "data_hash": data_hash,
+        "data_rows": int(len(df)),
+        "evaluation_rows": int(len(df_test)),
+        "experiment": args.experiment
+        or config.get("experiment", {}).get("name", "default"),
+        "feature_schema": {
+            "label_column": label_col,
+            "numeric_columns": store.metadata.get("numeric_columns", []),
+            "text_column": store.text_column,
+        },
+        "model_type": model_type,
+        "split": {
+            "random_state": random_state,
+            "stratified": True,
+            "test_size": test_size,
+        },
+        "training_rows": int(len(df_train)),
+    }
+    create_candidate_bundle(
+        bundle_path=bundle_path,
+        model=model,
+        transformers=store.export_transformers(),
+        training_metrics=metrics,
+        lineage=lineage,
+        expected_feature_dimension=int(X_train.shape[1]),
+    )
 
     logger.info(
-        "Training pipeline complete. Metrics:\n%s", json.dumps(metrics, indent=2)
+        "Training pipeline complete. Candidate bundle: %s\nMetrics:\n%s",
+        bundle_path,
+        json.dumps(metrics, indent=2),
     )
 
 
