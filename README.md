@@ -81,5 +81,5 @@ scikit-learn · MLflow · FastAPI · Docker · pytest · PyYAML
 
 **Mohd Zamin Quadri** — M.Sc. Mathematics in Science and Engineering, Technical University of Munich
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-mohd--zamin-blue)](https://www.linkedin.com/in/mohd-zamin/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-mohdzaminquadri-blue)](https://www.linkedin.com/in/mohdzaminquadri/)
 [![GitHub](https://img.shields.io/badge/GitHub-mzquadri-black)](https://github.com/mzquadri)
