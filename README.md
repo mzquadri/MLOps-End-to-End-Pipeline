@@ -110,4 +110,4 @@ scikit-learn, pandas, SciPy, MLflow, FastAPI, PyYAML, and pytest.
 
 **Mohd Zamin Quadri**
 
-[GitHub](https://github.com/mzquadri) · [LinkedIn](https://www.linkedin.com/in/mohd-zamin/)
+[GitHub](https://github.com/mzquadri) · [LinkedIn](https://www.linkedin.com/in/mohdzaminquadri/)
