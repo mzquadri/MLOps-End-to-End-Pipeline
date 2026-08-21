@@ -71,6 +71,11 @@ the part that needs a real deployment to be meaningful.
   that thought. Production would sign bundles and verify signatures before loading.
 - The container runs as a non-root user with no write access to its own code, and the
   bundle is mounted read-only.
+- Running as a non-root user makes file ownership a deployment concern rather than an
+  afterthought: the bundle has to be readable by the runtime user. This is easy to miss
+  because Docker Desktop for Windows does not enforce Unix ownership across a bind
+  mount, so a permission problem can pass locally and fail on a Linux host. A real
+  deployment would set ownership when the artifact is placed, not when it is consumed.
 - No secrets exist in the repository, and none are needed: the pipeline reads a public
   dataset and writes to local paths. A production version with object storage or a
   tracking server would need real secret management, not environment variables baked

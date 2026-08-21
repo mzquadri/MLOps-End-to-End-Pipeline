@@ -13,6 +13,7 @@ suite stays runnable on a laptop without Docker.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import shutil
 import subprocess
@@ -98,6 +99,22 @@ def image() -> str:
     return IMAGE_TAG
 
 
+def make_world_readable(root: Path) -> None:
+    """Let the container's unprivileged user read a bundle produced on the host.
+
+    pytest creates tmp directories as 0700 owned by the invoking user. Bind-mounting
+    one into a container that runs as uid 10001 then fails with EACCES on Linux, while
+    passing on Docker Desktop for Windows, which does not enforce Unix ownership across
+    the share. This is not a test-only quirk: any non-root deployment has to make the
+    bundle readable by the runtime user, so doing it explicitly here mirrors what a real
+    deploy must arrange.
+    """
+    for path in [root, *root.rglob("*")]:
+        # Windows has no POSIX mode bits to set; the mount is readable regardless.
+        with contextlib.suppress(OSError, NotImplementedError):
+            path.chmod(0o755 if path.is_dir() else 0o644)
+
+
 @pytest.fixture(scope="module")
 def promoted_bundle(tmp_path_factory) -> Path:
     """Produce a real production bundle on the host, to be mounted into the container."""
@@ -112,6 +129,8 @@ def promoted_bundle(tmp_path_factory) -> Path:
         registry_dir=str(workspace / "models" / "registry"),
         results_dir=str(workspace / "results"),
     )
+    # tmp_path_factory roots are 0700; the container user must be able to traverse them.
+    make_world_readable(workspace)
     return workspace / "models"
 
 
