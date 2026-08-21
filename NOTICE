@@ -1,0 +1,41 @@
+NOTICE
+======
+
+Scope of the MIT license
+------------------------
+
+The MIT license in LICENSE covers the source code, configuration, tests and
+documentation in this repository.
+
+It does NOT cover the datasets this code can download. No dataset is
+redistributed in this repository, and no dataset is relicensed by LICENSE.
+
+
+Third-party data
+----------------
+
+The reference run downloads the following dataset at run time. It is verified
+against a pinned SHA-256, cached locally, and never committed.
+
+  Sentiment Labelled Sentences
+  UCI Machine Learning Repository, dataset 331
+  https://archive.ics.uci.edu/dataset/331/sentiment+labelled+sentences
+
+  License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+           https://creativecommons.org/licenses/by/4.0/
+
+  Required attribution:
+    Kotzias, D. (2015). Sentiment Labelled Sentences [Dataset].
+    UCI Machine Learning Repository. https://doi.org/10.24432/C57604
+
+  Original research:
+    Kotzias, D., Denil, M., de Freitas, N., Smyth, P. (2015).
+    "From Group to Individual Labels using Deep Features."
+    KDD 2015.
+
+CC BY 4.0 requires attribution from anyone who uses or adapts the dataset.
+That obligation extends to anything derived from it, including models trained
+on it and results reported from it. Every model bundle this pipeline produces
+records the dataset licence and citation in its lineage for that reason.
+
+See docs/DATA.md for the full provenance record and the refresh procedure.
