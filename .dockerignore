@@ -1,0 +1,38 @@
+# Keep the build context small and free of data, models, and local state.
+# Anything not listed in the Dockerfile's COPY lines never reaches the image, but a
+# large context still costs time and can leak files into the daemon.
+
+.git
+.github
+.gitignore
+
+# Data and model artifacts are mounted at run time, never baked in.
+data/
+models/
+mlruns/
+mlartifacts/
+results/
+*.db
+
+# Local development noise
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+notebooks/
+tests/
+docs/
+
+# Secrets must never enter a build context, even though none are tracked.
+.env
+.env.*
+!.env.example
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

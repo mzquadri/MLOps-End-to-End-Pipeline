@@ -4,6 +4,7 @@ data/*.json
 data/*.zip
 data/raw/
 data/processed/
+data/cache/
 
 # Models
 models/*.pkl
@@ -44,6 +45,10 @@ env/
 *.swp
 *.swo
 
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -52,4 +57,4 @@ env/
 Thumbs.db
 
 # Docker
-.dockerignore
+# (.dockerignore is tracked on purpose - it controls what reaches the build context)

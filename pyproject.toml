@@ -1,0 +1,36 @@
+# Tooling configuration only. The project is run as modules (`python -m src.pipeline`)
+# rather than installed as a package, so there is no build backend here.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["notebooks"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import ordering
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplifications
+]
+ignore = [
+    "B008",  # FastAPI dependency defaults are idiomatic in call signatures
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests reach into module internals on purpose to assert failure behaviour.
+"tests/*" = ["B011", "SIM117"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "docker: integration tests that build and run the container image",
+    "network: tests that download the licensed reference dataset",
+]
+filterwarnings = [
+    "error::DeprecationWarning:src.*",
+]
