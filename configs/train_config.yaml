@@ -1,18 +1,40 @@
-# Training Configuration
+# Reference training configuration.
+#
+# This is the configuration the documented reference run uses. It points at a real,
+# openly licensed dataset and refuses to silently substitute generated text for it.
+# configs/ci_config.yaml is the offline variant used by tests and CI.
+
 experiment:
   name: "sentiment-classification"
-  description: "TF-IDF + ML models for sentiment analysis"
+  description: "TF-IDF + linear classifier over UCI Sentiment Labelled Sentences"
 
 data:
-  source: "data/reviews.csv"
-  test_size: 0.2
-  random_state: 42
+  # Licensed reference dataset, downloaded on demand and checksum-verified.
+  # CC BY 4.0 - see docs/DATA.md for the attribution this obliges.
+  dataset: "uci-sentiment-labelled-sentences"
+  cache_dir: "data/cache"
+  allow_download: true
+
+  # Optional local CSV override. When set and present it takes priority.
+  source: null
+
+  # The reference run must never quietly degrade to generated text. If the dataset
+  # cannot be obtained, the run fails and says so.
+  allow_synthetic_fallback: false
+  prefer_synthetic: false
+
   text_column: "review_text"
   label_column: "sentiment"
   max_features: 10000
 
+  # Fractions of the whole dataset. train = 1 - test_size - validation_size = 0.60.
+  # One seed derives both splits, so the partition is reproducible from this file.
+  test_size: 0.2
+  validation_size: 0.2
+  random_state: 42
+
 model:
-  type: "logistic_regression"  # logistic_regression, random_forest, svm
+  type: "logistic_regression"   # logistic_regression | random_forest | svm
   hyperparameters:
     logistic_regression:
       C: 1.0
@@ -29,14 +51,34 @@ model:
 training:
   cv_folds: 5
   scoring: "f1_weighted"
-  early_stopping: false
 
 validation:
-  min_accuracy: 0.85
-  min_f1: 0.83
-  max_drift_psi: 0.2
+  # Input-data checks. `error` means a degenerate dataset stops the run instead of
+  # producing a flattering score on it. Exploratory work can set this to `warn`.
+  data:
+    on_failure: "error"
+    max_null_pct: 0.05
+    max_duplicate_pct: 0.10
+    min_class_ratio: 0.10
+
+  # Promotion gate. Derived from the validation split only; see docs/EVALUATION.md
+  # for the full derivation. Summary:
+  #   majority-class baseline on this data ....... 0.500
+  #   observed validation accuracy .............. 0.812
+  #   gate, set below observed to absorb split noise but far above baseline
+  min_accuracy: 0.75
+  min_f1: 0.75
+
+  # The check that carries the real meaning. An accuracy floor alone is uninformative
+  # without the class balance; requiring a margin over the majority-class baseline
+  # keeps the gate honest if the data ever becomes imbalanced.
+  min_accuracy_over_baseline: 0.20
+
+  # In-process single-row latency. A regression guard, not a service level objective.
   max_latency_ms: 100
 
 mlflow:
+  # Off by default so a fresh clone has one fewer moving part. Turn it on and run
+  # `docker compose up mlflow`, or point it at any tracking server.
+  enabled: false
   tracking_uri: "sqlite:///mlruns.db"
-  registry_uri: "sqlite:///mlruns.db"

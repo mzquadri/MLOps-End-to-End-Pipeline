@@ -1,0 +1,59 @@
+# Offline configuration for tests, CI, and the container smoke test.
+#
+# This deliberately uses the synthetic fixture. The fixture is close to linearly
+# separable, so metrics produced with this config prove that the *pipeline* runs
+# end to end - they are never evidence about model quality. Anything quoted as a
+# result comes from configs/train_config.yaml and the licensed dataset.
+
+experiment:
+  name: "sentiment-classification-ci"
+  description: "Offline fixture run used to exercise the lifecycle"
+
+data:
+  dataset: "uci-sentiment-labelled-sentences"
+  cache_dir: "data/cache"
+  allow_download: false
+
+  source: null
+  allow_synthetic_fallback: true
+  prefer_synthetic: true
+  synthetic_rows: 400
+
+  text_column: "review_text"
+  label_column: "sentiment"
+  max_features: 2000
+
+  test_size: 0.2
+  validation_size: 0.2
+  random_state: 42
+
+model:
+  type: "logistic_regression"
+  hyperparameters:
+    logistic_regression:
+      C: 1.0
+      max_iter: 200
+      solver: "lbfgs"
+
+training:
+  cv_folds: 3
+  scoring: "f1_weighted"
+
+validation:
+  data:
+    # The fixture repeats a small template vocabulary by construction, so the duplicate
+    # ceiling is relaxed here and only here. The reference config keeps it at 0.10.
+    on_failure: "error"
+    max_null_pct: 0.05
+    max_duplicate_pct: 0.60
+    min_class_ratio: 0.10
+
+  min_accuracy: 0.75
+  min_f1: 0.75
+  min_accuracy_over_baseline: 0.20
+  # CI runners are shared and noisy, so the latency guard is loose enough not to flake.
+  max_latency_ms: 500
+
+mlflow:
+  enabled: false
+  tracking_uri: "sqlite:///mlruns.db"

@@ -1,30 +1,35 @@
-"""
-Training Module
-===============
-Trains ML models with MLflow experiment tracking, cross-validation,
-and hyperparameter logging.  Supports Logistic Regression, Random Forest,
-and SVM classifiers for the sentiment-analysis demo task.
+"""Model training: split, fit features on train only, cross-validate, emit a candidate.
+
+Split policy, which is the part worth reading carefully:
+
+    train (60%)       fits TF-IDF, the scaler, and the model
+    validation (20%)  the only split training is allowed to look at
+    test (20%)        never touched here; `src.evaluate` opens it exactly once
+
+Everything reported by this module is a *training-time* number: cross-validation on the
+training split and metrics on validation. The test split is not loaded, not transformed
+and not scored, so no amount of iterating on this file can leak it. That separation is
+why `training_metrics.json` no longer contains test metrics - it used to, under a name
+that implied otherwise.
 
 Usage:
-    python -m src.train --config configs/train_config.yaml --experiment sentiment-v1
+    python -m src.train --config configs/train_config.yaml
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import logging
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import yaml
+from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    precision_score,
-    recall_score,
-)
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.svm import SVC
 
@@ -33,11 +38,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Model factory
-# ---------------------------------------------------------------------------
-
 MODEL_REGISTRY = {
     "logistic_regression": LogisticRegression,
     "random_forest": RandomForestClassifier,
@@ -45,212 +45,250 @@ MODEL_REGISTRY = {
 }
 
 
-def build_model(config: Dict[str, Any]) -> Any:
-    """Instantiate a model from config."""
+def build_model(config: dict[str, Any]) -> Any:
+    """Instantiate the configured estimator."""
     model_type = config["model"]["type"]
-    hyperparams = config["model"]["hyperparameters"].get(model_type, {})
-
     if model_type not in MODEL_REGISTRY:
         raise ValueError(
             f"Unknown model type: {model_type}. Choose from {list(MODEL_REGISTRY)}"
         )
 
-    # SVM needs probability=True for calibration/soft predictions
+    hyperparams = dict(config["model"]["hyperparameters"].get(model_type, {}))
     if model_type == "svm":
+        # Needed so the serving layer can report a confidence alongside the label.
         hyperparams["probability"] = True
 
     model = MODEL_REGISTRY[model_type](**hyperparams)
-    logger.info("Built model: %s with params %s", model_type, hyperparams)
+    logger.info("Built %s with %s", model_type, hyperparams)
     return model
 
 
-# ---------------------------------------------------------------------------
-# Training logic
-# ---------------------------------------------------------------------------
+def three_way_split(
+    df: Any, labels: np.ndarray, test_size: float, validation_size: float, seed: int
+) -> tuple[Any, Any, Any, np.ndarray, np.ndarray, np.ndarray]:
+    """Stratified train/validation/test split, derived from one seed.
+
+    `validation_size` is expressed as a fraction of the whole dataset, then converted to
+    a fraction of the post-test remainder. Stating it relative to the original dataset
+    is what a reader expects, and doing the conversion here keeps that expectation true.
+    """
+    train_pool, test_df, y_pool, y_test = train_test_split(
+        df, labels, test_size=test_size, random_state=seed, stratify=labels
+    )
+    relative_validation = validation_size / (1.0 - test_size)
+    train_df, validation_df, y_train, y_validation = train_test_split(
+        train_pool,
+        y_pool,
+        test_size=relative_validation,
+        random_state=seed,
+        stratify=y_pool,
+    )
+    return train_df, validation_df, test_df, y_train, y_validation, y_test
 
 
 def cross_validate_model(
-    model: Any,
-    X: Any,
-    y: np.ndarray,
-    config: Dict[str, Any],
-) -> Dict[str, float]:
-    """Run stratified k-fold cross-validation."""
+    model: Any, X: Any, y: np.ndarray, config: dict[str, Any]
+) -> dict[str, float]:
+    """Stratified k-fold cross-validation on the training split only."""
     cv_folds = config.get("training", {}).get("cv_folds", 5)
     scoring = config.get("training", {}).get("scoring", "f1_weighted")
+    seed = config["data"].get("random_state", 42)
 
-    skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
-    scores = cross_val_score(model, X, y, cv=skf, scoring=scoring, n_jobs=-1)
-
+    splitter = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=seed)
+    scores = cross_val_score(model, X, y, cv=splitter, scoring=scoring, n_jobs=None)
     results = {
+        "cv_metric": scoring,
         "cv_mean": float(np.mean(scores)),
         "cv_std": float(np.std(scores)),
-        "cv_scores": scores.tolist(),
+        "cv_scores": [float(score) for score in scores],
     }
-    logger.info("CV %s: %.4f ± %.4f", scoring, results["cv_mean"], results["cv_std"])
+    logger.info("CV %s: %.4f +/- %.4f", scoring, results["cv_mean"], results["cv_std"])
     return results
+
+
+def classification_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    return {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "f1_weighted": float(f1_score(y_true, y_pred, average="weighted")),
+        "precision_weighted": float(
+            precision_score(y_true, y_pred, average="weighted", zero_division=0)
+        ),
+        "recall_weighted": float(
+            recall_score(y_true, y_pred, average="weighted", zero_division=0)
+        ),
+    }
+
+
+def majority_baseline(
+    X_train: Any, y_train: np.ndarray, X_eval: Any, y_eval: np.ndarray
+) -> dict[str, float]:
+    """Always-predict-the-largest-class comparator.
+
+    Without it, an accuracy number has no scale. On a balanced binary task this lands
+    near 0.5, which is precisely the context a reader needs before being impressed by
+    anything else.
+    """
+    baseline = DummyClassifier(strategy="most_frequent").fit(X_train, y_train)
+    return classification_metrics(y_eval, baseline.predict(X_eval))
 
 
 def train_model(
     X_train: Any,
     y_train: np.ndarray,
-    X_test: Any,
-    y_test: np.ndarray,
-    config: Dict[str, Any],
-    experiment_name: Optional[str] = None,
-) -> Tuple[Any, Dict[str, Any]]:
-    """
-    Train model, evaluate, and optionally log to MLflow.
-
-    Returns (fitted_model, metrics_dict).
-    """
+    X_validation: Any,
+    y_validation: np.ndarray,
+    config: dict[str, Any],
+    experiment_name: str | None = None,
+) -> tuple[Any, dict[str, Any]]:
+    """Cross-validate, fit, and score on validation. Returns (model, training metrics)."""
     model = build_model(config)
-
-    # Cross-validation
     cv_results = cross_validate_model(model, X_train, y_train, config)
 
-    # Final fit
-    logger.info("Training final model on %d samples …", X_train.shape[0])
-    start = time.time()
+    logger.info("Fitting final model on %d training rows", X_train.shape[0])
+    started = time.perf_counter()
     model.fit(X_train, y_train)
-    train_time = time.time() - start
+    train_seconds = time.perf_counter() - started
 
-    # Predict
-    y_pred = model.predict(X_test)
-    metrics = {
-        "accuracy": float(accuracy_score(y_test, y_pred)),
-        "f1_weighted": float(f1_score(y_test, y_pred, average="weighted")),
-        "precision_weighted": float(
-            precision_score(y_test, y_pred, average="weighted")
-        ),
-        "recall_weighted": float(recall_score(y_test, y_pred, average="weighted")),
-        "train_time_seconds": round(train_time, 2),
+    validation_metrics = classification_metrics(y_validation, model.predict(X_validation))
+    baseline_metrics = majority_baseline(X_train, y_train, X_validation, y_validation)
+
+    metrics: dict[str, Any] = {
+        **{f"validation_{k}": v for k, v in validation_metrics.items()},
+        **{f"baseline_{k}": v for k, v in baseline_metrics.items()},
+        "train_time_seconds": round(train_seconds, 3),
         **cv_results,
     }
     logger.info(
-        "Test accuracy: %.4f  |  F1: %.4f", metrics["accuracy"], metrics["f1_weighted"]
+        "Validation accuracy %.4f (majority baseline %.4f) | weighted F1 %.4f",
+        validation_metrics["accuracy"],
+        baseline_metrics["accuracy"],
+        validation_metrics["f1_weighted"],
     )
 
-    # MLflow logging (optional – graceful fallback if MLflow is unavailable)
     _try_mlflow_log(config, model, metrics, experiment_name)
-
     return model, metrics
 
 
-# ---------------------------------------------------------------------------
-# MLflow integration
-# ---------------------------------------------------------------------------
-
-
 def _try_mlflow_log(
-    config: Dict[str, Any],
+    config: dict[str, Any],
     model: Any,
-    metrics: Dict[str, Any],
-    experiment_name: Optional[str],
+    metrics: dict[str, Any],
+    experiment_name: str | None,
 ) -> None:
-    """Attempt to log run to MLflow; skip silently if not installed."""
+    """Log to MLflow when it is installed and enabled; otherwise say so and move on.
+
+    Tracking is optional on purpose. The bundle, not MLflow, is the source of truth for
+    promotion, so a missing tracker degrades observability rather than correctness.
+    """
+    mlflow_cfg = config.get("mlflow", {})
+    if not mlflow_cfg.get("enabled", False):
+        logger.info("MLflow logging disabled in config; skipping")
+        return
+
     try:
         import mlflow
         import mlflow.sklearn
     except ImportError:
-        logger.warning("mlflow not installed – skipping experiment tracking.")
+        logger.warning("mlflow is enabled in config but not installed; skipping")
         return
 
-    tracking_uri = config.get("mlflow", {}).get("tracking_uri", "sqlite:///mlruns.db")
-    mlflow.set_tracking_uri(tracking_uri)
-
-    exp_name = experiment_name or config.get("experiment", {}).get("name", "default")
-    mlflow.set_experiment(exp_name)
-
+    mlflow.set_tracking_uri(mlflow_cfg.get("tracking_uri", "sqlite:///mlruns.db"))
+    mlflow.set_experiment(
+        experiment_name or config.get("experiment", {}).get("name", "default")
+    )
     with mlflow.start_run():
-        # Log parameters
         model_type = config["model"]["type"]
         mlflow.log_param("model_type", model_type)
-        hyperparams = config["model"]["hyperparameters"].get(model_type, {})
-        for k, v in hyperparams.items():
-            mlflow.log_param(k, v)
+        for key, value in config["model"]["hyperparameters"].get(model_type, {}).items():
+            mlflow.log_param(key, value)
         mlflow.log_param("cv_folds", config.get("training", {}).get("cv_folds", 5))
-
-        # Log metrics
         for name, value in metrics.items():
-            if isinstance(value, (int, float)):
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
                 mlflow.log_metric(name, value)
-
-        # Log model artifact
-        mlflow.sklearn.log_model(model, "model")
-
-        logger.info("MLflow run logged to experiment '%s'", exp_name)
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
+        mlflow.sklearn.log_model(model, name="model")
+        logger.info("Logged run to MLflow")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Train model with experiment tracking")
+    parser = argparse.ArgumentParser(description="Train a candidate model bundle")
     parser.add_argument("--config", type=str, default="configs/train_config.yaml")
     parser.add_argument("--experiment", type=str, default=None)
     parser.add_argument(
         "--bundle_path",
         type=str,
         default="models/candidates/sentiment-classifier",
-        help="Candidate bundle directory",
+        help="Candidate bundle directory to create",
     )
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
+    with open(args.config, encoding="utf-8") as handle:
+        config = yaml.safe_load(handle)
 
-    # Import sibling modules
     from src.data_pipeline import load_and_preprocess
     from src.feature_store import FeatureStore
     from src.model_bundle import create_candidate_bundle
 
-    # Data
-    df, data_hash = load_and_preprocess(config)
-    label_col = config["data"].get("label_column", "sentiment")
-    y = df[label_col].values
+    df, data_hash, provenance, validation_report = load_and_preprocess(config)
+    label_column = config["data"].get("label_column", "sentiment")
+    labels = df[label_column].to_numpy()
 
-    # Train/test split
-    test_size = config["data"].get("test_size", 0.2)
-    random_state = config["data"].get("random_state", 42)
-    df_train, df_test, y_train, y_test = train_test_split(
-        df, y, test_size=test_size, random_state=random_state, stratify=y
+    test_size = float(config["data"].get("test_size", 0.2))
+    validation_size = float(config["data"].get("validation_size", 0.2))
+    seed = int(config["data"].get("random_state", 42))
+    train_df, validation_df, test_df, y_train, y_validation, _ = three_way_split(
+        df, labels, test_size, validation_size, seed
+    )
+    logger.info(
+        "Split sizes - train %d, validation %d, test %d (test is not read here)",
+        len(train_df),
+        len(validation_df),
+        len(test_df),
     )
 
-    # Features
     store = FeatureStore(config)
-    X_train, X_test = store.get_features(df_train, df_test, use_cache=False)
+    X_train = store.fit_transform_train(train_df)
+    X_validation = store.transform(validation_df)
 
-    # Train
     model, metrics = train_model(
-        X_train, y_train, X_test, y_test, config, args.experiment
+        X_train, y_train, X_validation, y_validation, config, args.experiment
     )
 
-    model_type = config["model"]["type"]
-    bundle_path = args.bundle_path
     lineage = {
         "data_hash": data_hash,
         "data_rows": int(len(df)),
-        "evaluation_rows": int(len(df_test)),
+        "dataset": provenance,
+        "data_validation": {
+            "overall_passed": validation_report["overall_passed"],
+            "duplicate_percentage": validation_report["duplicate_check"][
+                "duplicate_percentage"
+            ],
+            "min_class_percentage": (
+                validation_report["class_balance"]["min_class_percentage"]
+                if validation_report["class_balance"]
+                else None
+            ),
+        },
+        "evaluation_rows": int(len(test_df)),
         "experiment": args.experiment
         or config.get("experiment", {}).get("name", "default"),
         "feature_schema": {
-            "label_column": label_col,
+            "label_column": label_column,
             "numeric_columns": store.metadata.get("numeric_columns", []),
             "text_column": store.text_column,
         },
-        "model_type": model_type,
+        "model_type": config["model"]["type"],
         "split": {
-            "random_state": random_state,
+            "random_state": seed,
             "stratified": True,
             "test_size": test_size,
+            "validation_size": validation_size,
         },
-        "training_rows": int(len(df_train)),
+        "training_rows": int(len(train_df)),
+        "validation_rows": int(len(validation_df)),
     }
+
     create_candidate_bundle(
-        bundle_path=bundle_path,
+        bundle_path=args.bundle_path,
         model=model,
         transformers=store.export_transformers(),
         training_metrics=metrics,
@@ -259,9 +297,9 @@ def main() -> None:
     )
 
     logger.info(
-        "Training pipeline complete. Candidate bundle: %s\nMetrics:\n%s",
-        bundle_path,
-        json.dumps(metrics, indent=2),
+        "Candidate bundle written to %s\n%s",
+        args.bundle_path,
+        json.dumps(metrics, indent=2, sort_keys=True),
     )
 
 
