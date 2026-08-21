@@ -28,7 +28,7 @@ The original research is Kotzias et al., *"From Group to Individual Labels using
 Features"*, KDD 2015.
 
 **The dataset is not MIT licensed.** The MIT license in this repository covers the code
-only. See the scope note at the bottom of `LICENSE`.
+only. The scope of that grant and this dataset's terms are recorded in [`NOTICE`](../NOTICE).
 
 ## Why it is not committed
 

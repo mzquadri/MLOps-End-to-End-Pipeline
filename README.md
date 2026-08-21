@@ -190,7 +190,8 @@ none of it is faked here.
 
 ## License and data attribution
 
-Code, configuration, tests and documentation: **MIT** ([LICENSE](LICENSE)).
+Code, configuration, tests and documentation: **MIT** ([LICENSE](LICENSE)). The scope of
+that grant, and the third-party data terms below, are recorded in [NOTICE](NOTICE).
 
 The dataset is **not** covered by that license and is not redistributed here. The
 reference run downloads UCI *Sentiment Labelled Sentences*, licensed **CC BY 4.0**, which
