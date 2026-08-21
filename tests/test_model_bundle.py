@@ -25,6 +25,14 @@ from src.model_bundle import (
     update_evaluation_report,
     validate_bundle,
 )
+from tests.conftest import DATASET_PROVENANCE, make_gate_report, make_lineage
+
+FAKE_VALIDATION = {
+    "overall_passed": True,
+    "duplicate_check": {"duplicate_percentage": 0.0, "passed": True},
+    "class_balance": {"min_class_percentage": 0.5, "passed": True},
+    "null_check": {"passed": True},
+}
 
 
 @pytest.fixture
@@ -38,6 +46,9 @@ def bundle_config(tmp_path):
             "text_column": "review_text",
             "label_column": "sentiment",
             "max_features": 100,
+            "validation_size": 0.2,
+            "allow_synthetic_fallback": True,
+            "prefer_synthetic": True,
         },
         "model": {
             "type": "logistic_regression",
@@ -51,8 +62,10 @@ def bundle_config(tmp_path):
         },
         "training": {"cv_folds": 2, "scoring": "f1_weighted"},
         "validation": {
+            "data": {"on_failure": "warn", "max_duplicate_pct": 0.95},
             "min_accuracy": 0.5,
             "min_f1": 0.5,
+            "min_accuracy_over_baseline": 0.2,
             "max_latency_ms": 500,
         },
     }
@@ -100,83 +113,29 @@ def make_candidate(path: Path, config, df: pd.DataFrame) -> Path:
         model,
         store.export_transformers(),
         {"accuracy": 1.0, "f1_weighted": 1.0},
-        {
-            "data_hash": compute_data_hash(df),
-            "data_rows": len(df),
-            "evaluation_rows": len(test_df),
-            "feature_schema": {
-                "label_column": "sentiment",
-                "numeric_columns": store.metadata["numeric_columns"],
-                "text_column": "review_text",
-            },
-            "split": {
-                "random_state": config["data"]["random_state"],
-                "stratified": True,
-                "test_size": config["data"]["test_size"],
-            },
-            "training_rows": len(train_df),
-        },
+        make_lineage(
+            compute_data_hash(df),
+            test_size=config["data"]["test_size"],
+            validation_size=config["data"].get("validation_size", 0.2),
+            random_state=config["data"]["random_state"],
+            numeric_columns=store.metadata["numeric_columns"],
+            data_rows=len(df),
+            evaluation_rows=len(test_df),
+            training_rows=len(train_df),
+        ),
         X_train.shape[1],
     )
     return path
 
 
 def passing_report(data_hash: str) -> dict:
-    return {
-        "data_hash": data_hash,
-        "evaluation_status": "passed",
-        "latency": {"p95_latency_ms": 1.0},
-        "metrics": {"accuracy": 1.0, "f1_weighted": 1.0},
-        "performance_gate": {
-            "overall_passed": True,
-            "checks": {
-                "accuracy": {
-                    "value": 1.0,
-                    "threshold": 0.5,
-                    "passed": True,
-                },
-                "f1_weighted": {
-                    "value": 1.0,
-                    "threshold": 0.5,
-                    "passed": True,
-                },
-                "latency_p95": {
-                    "value": 1.0,
-                    "threshold": 500.0,
-                    "passed": True,
-                },
-            },
-        },
-    }
+    return make_gate_report(data_hash)
 
 
 def failed_report(data_hash: str) -> dict:
-    return {
-        "data_hash": data_hash,
-        "evaluation_status": "failed",
-        "latency": {"p95_latency_ms": 1.0},
-        "metrics": {"accuracy": 0.1, "f1_weighted": 0.1},
-        "performance_gate": {
-            "overall_passed": False,
-            "checks": {
-                "accuracy": {
-                    "value": 0.1,
-                    "threshold": 0.5,
-                    "passed": False,
-                },
-                "f1_weighted": {
-                    "value": 0.1,
-                    "threshold": 0.5,
-                    "passed": False,
-                },
-                "latency_p95": {
-                    "value": 1.0,
-                    "threshold": 500.0,
-                    "passed": True,
-                },
-            },
-        },
-    }
+    return make_gate_report(
+        data_hash, accuracy=0.1, f1_weighted=0.1, accuracy_over_baseline=-0.05
+    )
 
 
 def test_transform_only_path_preserves_fitted_state(bundle_config, bundle_df, tmp_path):
@@ -390,13 +349,16 @@ def test_failed_evaluation_uses_transform_only_and_exits_nonzero(
     config_path.write_text(yaml.safe_dump(evaluation_config), encoding="utf-8")
     data_hash = compute_data_hash(bundle_df)
     monkeypatch.setattr(
-        data_pipeline, "load_and_preprocess", lambda config: (bundle_df, data_hash)
+        data_pipeline,
+        "load_and_preprocess",
+        lambda config: (bundle_df, data_hash, dict(DATASET_PROVENANCE), FAKE_VALIDATION),
     )
 
     def refit_is_forbidden(*args, **kwargs):
         raise AssertionError("Evaluation attempted to refit preprocessing state")
 
     monkeypatch.setattr(FeatureStore, "get_features", refit_is_forbidden)
+    monkeypatch.setattr(FeatureStore, "fit_transform_train", refit_is_forbidden)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -406,7 +368,7 @@ def test_failed_evaluation_uses_transform_only_and_exits_nonzero(
             str(bundle),
             "--config",
             str(config_path),
-            "--threshold",
+            "--min_accuracy",
             "1.1",
         ],
     )
