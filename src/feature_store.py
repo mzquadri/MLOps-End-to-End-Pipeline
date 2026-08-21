@@ -14,12 +14,11 @@ import hashlib
 import logging
 import os
 import pickle
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.sparse import hstack, issparse, spmatrix
+from scipy.sparse import hstack, spmatrix
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.preprocessing import StandardScaler
 
@@ -44,7 +43,6 @@ class FeatureStore:
     ) -> None:
         self.config = config
         self.cache_dir = cache_dir
-        os.makedirs(cache_dir, exist_ok=True)
 
         data_cfg = config.get("data", {})
         self.text_column = data_cfg.get("text_column", "review_text")
@@ -75,6 +73,7 @@ class FeatureStore:
         return None
 
     def _save_cache(self, key: str, obj: Any) -> None:
+        os.makedirs(self.cache_dir, exist_ok=True)
         path = os.path.join(self.cache_dir, f"{key}.pkl")
         with open(path, "wb") as f:
             pickle.dump(obj, f)
@@ -201,7 +200,6 @@ class FeatureStore:
 
         logger.info("Final feature matrix: %s", X_train.shape)
         self._feature_metadata["total_features"] = X_train.shape[1]
-        self._feature_metadata["timestamp"] = datetime.utcnow().isoformat()
 
         result = (X_train, X_test)
         if use_cache:
@@ -212,28 +210,79 @@ class FeatureStore:
     # Persistence
     # ------------------------------------------------------------------
 
-    def save_transformers(self, path: str = "models/feature_transformers.pkl") -> None:
-        """Save fitted TF-IDF vectorizer and scaler for inference."""
+    def export_transformers(self) -> Dict[str, Any]:
+        """Return the fitted preprocessing state for inclusion in a bundle."""
+        if self.tfidf is None:
+            raise RuntimeError("Feature transformers have not been fitted.")
+        return {
+            "tfidf": self.tfidf,
+            "scaler": self.scaler,
+            "metadata": self.metadata,
+        }
+
+    def import_transformers(self, transformers: Dict[str, Any]) -> None:
+        """Use preprocessing state loaded from the same trusted model bundle."""
+        if "tfidf" not in transformers:
+            raise ValueError("Transformer bundle is missing 'tfidf'.")
+        self.tfidf = transformers["tfidf"]
+        self.scaler = transformers.get("scaler")
+        self._feature_metadata = dict(transformers.get("metadata", {}))
+
+    def save_transformers(self, path: str) -> None:
+        """Save fitted transformers to an explicit trusted local path.
+
+        New workflows should use a model bundle instead. This method remains for
+        library compatibility and never writes to a global fallback location.
+        """
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as f:
-            pickle.dump(
-                {
-                    "tfidf": self.tfidf,
-                    "scaler": self.scaler,
-                    "metadata": self._feature_metadata,
-                },
-                f,
-            )
+            pickle.dump(self.export_transformers(), f)
         logger.info("Feature transformers saved → %s", path)
 
-    def load_transformers(self, path: str = "models/feature_transformers.pkl") -> None:
-        """Load pre-fitted transformers for inference."""
+    def load_transformers(self, path: str) -> None:
+        """Load transformers from an explicit, trusted local path only."""
         with open(path, "rb") as f:
             bundle = pickle.load(f)
-        self.tfidf = bundle["tfidf"]
-        self.scaler = bundle["scaler"]
-        self._feature_metadata = bundle.get("metadata", {})
+        self.import_transformers(bundle)
         logger.info("Feature transformers loaded from %s", path)
+
+    def transform(self, df: pd.DataFrame) -> Any:
+        """Transform held-out or serving rows without fitting any state."""
+        if self.tfidf is None:
+            raise RuntimeError("Transformers not fitted or loaded.")
+
+        text_col_clean = f"{self.text_column}_clean"
+        if text_col_clean in df.columns:
+            texts = df[text_col_clean]
+        elif self.text_column in df.columns:
+            from src.data_pipeline import preprocess_text
+
+            texts = df[self.text_column].astype(str).map(preprocess_text)
+        else:
+            raise ValueError(f"Missing required text column: {self.text_column}")
+
+        X_tfidf = self.tfidf.transform(texts)
+        numeric_columns = self._feature_metadata.get("numeric_columns", [])
+        if numeric_columns:
+            missing = [column for column in numeric_columns if column not in df.columns]
+            if missing:
+                raise ValueError(f"Missing required numeric columns: {missing}")
+            if self.scaler is None:
+                raise RuntimeError("Numeric columns require a fitted scaler.")
+            from scipy.sparse import csr_matrix
+
+            X_numeric = self.scaler.transform(df[numeric_columns].fillna(0))
+            transformed = hstack([X_tfidf, csr_matrix(X_numeric)]).tocsr()
+        else:
+            transformed = X_tfidf.tocsr()
+
+        expected = self._feature_metadata.get("total_features")
+        if expected is not None and transformed.shape[1] != expected:
+            raise RuntimeError(
+                "Feature dimension mismatch: "
+                f"expected {expected}, got {transformed.shape[1]}"
+            )
+        return transformed
 
     def transform_single(
         self, text: str, numeric_values: Optional[Dict[str, float]] = None
@@ -248,14 +297,26 @@ class FeatureStore:
         clean = preprocess_text(text)
         X_tfidf = self.tfidf.transform([clean])
 
-        if self.scaler is not None and numeric_values:
-            num_cols = self._feature_metadata.get("numeric_columns", [])
-            num_arr = np.array([[numeric_values.get(c, 0) for c in num_cols]])
+        num_cols = self._feature_metadata.get("numeric_columns", [])
+        if self.scaler is not None and num_cols:
+            values = numeric_values or {}
+            num_arr = pd.DataFrame(
+                [[values.get(c, 0) for c in num_cols]], columns=num_cols
+            )
             X_num = self.scaler.transform(num_arr)
             from scipy.sparse import csr_matrix
 
-            return hstack([X_tfidf, csr_matrix(X_num)])
-        return X_tfidf
+            transformed = hstack([X_tfidf, csr_matrix(X_num)]).tocsr()
+        else:
+            transformed = X_tfidf.tocsr()
+
+        expected = self._feature_metadata.get("total_features")
+        if expected is not None and transformed.shape[1] != expected:
+            raise RuntimeError(
+                "Feature dimension mismatch: "
+                f"expected {expected}, got {transformed.shape[1]}"
+            )
+        return transformed
 
     @property
     def metadata(self) -> Dict[str, Any]:

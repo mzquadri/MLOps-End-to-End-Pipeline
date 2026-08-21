@@ -3,7 +3,7 @@ serving:
   host: "0.0.0.0"
   port: 8000
   workers: 2
-  model_path: "models/production"
+  model_bundle_path: "models/registry/sentiment-classifier/v1"
   max_batch_size: 32
   timeout_seconds: 30
 

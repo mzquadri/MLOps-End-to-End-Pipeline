@@ -9,7 +9,7 @@ services:
       - ./models:/app/models
       - ./data:/app/data
     environment:
-      - MODEL_PATH=models/production
+      - MODEL_BUNDLE_PATH=models/registry/sentiment-classifier/v1
       - LOG_LEVEL=INFO
     restart: unless-stopped
     healthcheck:
