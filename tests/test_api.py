@@ -5,7 +5,6 @@ Tests for the FastAPI serving endpoints.
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -75,14 +74,10 @@ class TestPredictEndpointWithModel:
     @pytest.fixture(autouse=True)
     def setup_mock_model(self):
         """Set up a minimal mock model + transformers for prediction tests."""
-        import pickle
-        import tempfile
-
-        import numpy as np
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.linear_model import LogisticRegression
-        from sklearn.preprocessing import StandardScaler
 
+        from src.feature_store import FeatureStore
         from src.serve import state
 
         # Train a tiny model
@@ -101,11 +96,18 @@ class TestPredictEndpointWithModel:
 
         # Set state manually
         state.model = model
-        state.feature_transformers = {
-            "tfidf": tfidf,
-            "scaler": None,
-            "metadata": {"numeric_columns": []},
-        }
+        store = FeatureStore({"data": {"text_column": "review_text"}})
+        store.import_transformers(
+            {
+                "tfidf": tfidf,
+                "scaler": None,
+                "metadata": {
+                    "numeric_columns": [],
+                    "total_features": X.shape[1],
+                },
+            }
+        )
+        state.feature_store = store
         state.model_version = "test-v1"
         state.prediction_count = 0
 
@@ -113,7 +115,7 @@ class TestPredictEndpointWithModel:
 
         # Teardown
         state.model = None
-        state.feature_transformers = None
+        state.feature_store = None
 
     def test_single_prediction(self, client):
         response = client.post("/predict", json={"text": "This is a great product"})
@@ -142,6 +144,15 @@ class TestPredictEndpointWithModel:
         initial = state.prediction_count
         client.post("/predict", json={"text": "test review"})
         assert state.prediction_count == initial + 1
+
+    def test_prediction_log_does_not_store_raw_text(self, client):
+        from src.serve import state
+
+        secret_text = "private review content"
+        response = client.post("/predict", json={"text": secret_text})
+        assert response.status_code == 200
+        assert secret_text not in repr(state.prediction_log)
+        assert state.prediction_log[-1]["text_length"] == len(secret_text)
 
 
 # ---------------------------------------------------------------------------

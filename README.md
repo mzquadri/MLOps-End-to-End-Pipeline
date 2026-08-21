@@ -1,85 +1,113 @@
 # MLOps End-to-End Pipeline
 
-Training a model in a notebook is the easy part. The hard part is everything around it:
-knowing exactly which data produced which model, refusing to ship a model that does not
-meet the bar, and serving it in a way you can reproduce six months later. This repo is a
-complete, runnable implementation of that lifecycle for a text-classification task
-(sentiment analysis) — the same machinery a production ML team would use, small enough
-to read in an afternoon.
+A compact, runnable reference pipeline for text classification. It demonstrates
+data validation, feature fitting, model training, evaluation gates, immutable
+registry versions, and FastAPI serving without claiming production deployment or
+real-world accuracy.
 
-> **Scope:** this is a reference pipeline, not a deployed product. When no dataset is
-> supplied it deterministically generates synthetic review text, so every step runs
-> end-to-end with zero setup. No production accuracy claim is made — point it at a real,
-> licensed dataset before reading anything into the metrics.
+When `data/reviews.csv` is absent, the pipeline uses deterministic synthetic
+reviews. No dataset, model bundle, MLflow state, or evaluation result is tracked.
 
-## The lifecycle
+## Lifecycle
 
-![Pipeline](docs/diagrams/pipeline.svg)
+![Atomic bundle lifecycle](docs/diagrams/pipeline.svg)
 
-Each stage is a small CLI tool that can also be imported as a library:
+Run from the repository root with Python 3.11:
 
 ```bash
 pip install -r requirements.txt
 
-python src/data_pipeline.py  --config configs/train_config.yaml     # validate + version data
-python src/train.py          --config configs/train_config.yaml     # train + log to MLflow
-python src/evaluate.py       --model_path models/latest             # metrics + quality gate
-python src/model_registry.py --register --stage production          # promote the model
-python src/serve.py          --model_path models/production         # FastAPI on :8000
-
-# or the whole thing, containerized:
-docker-compose up --build
+python -m src.train --config configs/train_config.yaml
+python -m src.evaluate --bundle_path models/candidates/sentiment-classifier
+python -m src.model_registry --register --model_name sentiment-classifier \
+  --bundle_path models/candidates/sentiment-classifier --stage staging
+python -m src.model_registry --model_name sentiment-classifier --promote v1
+python -m src.serve \
+  --bundle_path models/registry/sentiment-classifier/v1 \
+  --host 127.0.0.1 --port 8000
 ```
 
-## What each component actually does
+Evaluation exits nonzero when any configured accuracy, weighted-F1, or latency
+gate fails. Direct registration into production is rejected. A version must be a
+checksum-valid, passing staging bundle before it can be promoted. Evaluation
+reconstructs the exact stratified split and feature schema recorded by training,
+not split settings supplied later at evaluation time.
 
-| Component | Implementation | Why it matters |
-|---|---|---|
-| Data versioning | SHA-256 content hash + JSON manifest per version | every model traceable to the exact rows that trained it |
-| Data validation | nulls, duplicates, class balance, drift (KS-test + PSI) | catch bad data before it silently becomes a bad model |
-| Feature store | TF-IDF transformers fitted once, cached, reused at serve time | train/serve skew eliminated by construction |
-| Experiment tracking | MLflow (params, metrics, model artifact per run) | compare runs, reproduce the best one |
-| Quality gate | configurable min-accuracy threshold | a model that fails the gate is never promoted |
-| Model registry | versioned local registry, stages none → staging → production | explicit, auditable promotion |
-| Serving | FastAPI: `/predict`, `/predict/batch`, `/health` with latency + prediction logging | observable inference service |
-| CI | GitHub Actions runs the pytest suite on every push and PR | the pipeline itself is tested like software |
+`docker-compose up --build` starts the API and MLflow services only. It does not
+train, evaluate, or promote a model; point `MODEL_BUNDLE_PATH` at an existing
+passing registry bundle first.
 
-## Repository layout
+## Atomic bundles
 
+Training fits TF-IDF and numeric scaling on the training partition only. The
+held-out partition and serving requests use transform-only methods. Training
+atomically writes one candidate directory containing:
+
+```text
+model.joblib
+feature_transformers.joblib
+training_metrics.json
+lineage.json
+evaluation_report.json
+manifest.json
 ```
-MLOps-End-to-End-Pipeline/
-├── src/
-│   ├── data_pipeline.py     # load, clean, validate, hash-version the data
-│   ├── feature_store.py     # TF-IDF features, cached transformers
-│   ├── train.py             # model factory (LR / RF / SVM), CV, MLflow logging
-│   ├── evaluate.py          # metrics, ROC/PR curves, quality gates
-│   ├── model_registry.py    # versioned registry with stage management
-│   └── serve.py             # FastAPI inference service
-├── configs/                 # train + deploy configuration (YAML)
-├── tests/                   # data-pipeline, model, and API tests
-├── notebooks/               # guided walkthrough of the whole flow
-├── docs/diagrams/           # architecture diagrams
-├── Dockerfile, docker-compose.yml
-└── .github/workflows/       # CI: pytest on push/PR
-```
+
+The deterministic manifest declares format version `1.0`, the expected feature
+dimension, every required filename, and SHA-256 checksums for every artifact.
+Evaluation atomically replaces the pending report and manifest. Registry versions
+copy the entire validated directory and are never partially assembled. Serving
+loads the model and preprocessing state from that same bundle, checks dimensions,
+confirms the registry marks that exact version as production, and has no
+global-transformer or `latest` fallback.
+
+See [Model bundle integrity and migration](docs/MODEL_BUNDLES.md) for the trust
+boundary, manifest details, failure behavior, and migration from legacy split
+artifacts.
+
+## Components
+
+| Component | Behavior |
+|---|---|
+| Data pipeline | Clean, validate, and SHA-256-version input rows |
+| Feature store | Fit on training data; transform held-out and serving data without refitting |
+| Training | Cross-validation, final fit, optional MLflow logging, atomic candidate bundle |
+| Evaluation | Same-bundle transform, metrics and latency, embedded pass/fail report |
+| Registry | Complete-bundle validation and explicit staging-to-production promotion |
+| Serving | One checksum-valid production bundle, health/readiness, batch prediction |
+| CI | Deterministic CPU-only pytest suite on Python 3.11 |
+
+Prediction logs retain length, output, confidence, and latency, but never raw
+request text. Lineage stores the data content hash, row counts, split parameters,
+feature schema, experiment name, and model type; it excludes source paths,
+credentials, environment variables, and raw records.
 
 ## Verification
 
 ```bash
-pip install -r requirements.txt
-python -m pytest -q
+python -m pytest -q -p no:cacheprovider
+python -m compileall -q src tests
 ```
 
-No dataset, model, or evaluation report is versioned in the repo — running the data
-pipeline without `data/reviews.csv` uses the deterministic synthetic demo data.
+## Repository layout
+
+```text
+src/model_bundle.py       bundle contract, atomic writes, hashes, validation
+src/feature_store.py      fit and transform-only feature paths
+src/train.py              model training and candidate creation
+src/evaluate.py           held-out evaluation and promotion gate
+src/model_registry.py     immutable local versions and stage transitions
+src/serve.py              FastAPI inference from one validated bundle
+tests/                    deterministic data, bundle, registry, and API tests
+configs/                  training and deployment examples
+docs/                     lifecycle and integrity documentation
+```
 
 ## Tech stack
 
-scikit-learn · MLflow · FastAPI · Docker · pytest · PyYAML
+scikit-learn, pandas, SciPy, MLflow, FastAPI, PyYAML, and pytest.
 
 ## Author
 
-**Mohd Zamin Quadri** — M.Sc. Mathematics in Science and Engineering, Technical University of Munich
+**Mohd Zamin Quadri**
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-mohdzaminquadri-blue)](https://www.linkedin.com/in/mohdzaminquadri/)
-[![GitHub](https://img.shields.io/badge/GitHub-mzquadri-black)](https://github.com/mzquadri)
+[GitHub](https://github.com/mzquadri) · [LinkedIn](https://www.linkedin.com/in/mohdzaminquadri/)

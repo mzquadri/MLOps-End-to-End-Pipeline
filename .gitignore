@@ -13,11 +13,13 @@ models/*/
 # MLflow
 mlruns/
 mlartifacts/
+*.db
 
 # Results
 results/*.png
 results/*.html
 results/*.csv
+results/*.json
 
 # Python
 __pycache__/
@@ -32,6 +34,9 @@ build/
 venv/
 env/
 .env
+.env.*
+!.env.example
+*.log
 
 # IDE
 .vscode/
