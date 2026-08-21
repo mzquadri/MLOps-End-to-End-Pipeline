@@ -14,12 +14,13 @@ import math
 import os
 import shutil
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any
 
 import joblib
 
-BUNDLE_FORMAT_VERSION = "1.0"
+BUNDLE_FORMAT_VERSION = "1.1"
 MODEL_FILE = "model.joblib"
 TRANSFORMERS_FILE = "feature_transformers.joblib"
 TRAINING_METRICS_FILE = "training_metrics.json"
@@ -36,6 +37,10 @@ ARTIFACT_FILES = (
 REQUIRED_GATE_CHECKS = {
     "accuracy": ("metrics", "accuracy", "minimum"),
     "f1_weighted": ("metrics", "f1_weighted", "minimum"),
+    # A raw accuracy floor says nothing on its own: 0.95 is poor on a 99%-imbalanced
+    # task and excellent on a balanced one. Requiring a margin over the majority-class
+    # baseline makes the gate mean the same thing across datasets.
+    "accuracy_over_baseline": ("metrics", "accuracy_over_baseline", "minimum"),
     "latency_p95": ("latency", "p95_latency_ms", "maximum"),
 }
 
@@ -59,7 +64,7 @@ def file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _manifest(bundle_dir: Path, expected_dimension: int) -> Dict[str, Any]:
+def _manifest(bundle_dir: Path, expected_dimension: int) -> dict[str, Any]:
     return {
         "artifact_checksums": {
             filename: file_sha256(bundle_dir / filename)
@@ -129,6 +134,17 @@ def _validate_lineage(lineage: Any) -> None:
     if not isinstance(schema.get("numeric_columns"), list):
         raise BundleIntegrityError("Feature schema requires numeric_columns")
 
+    # A model that cannot say where its training data came from, or under what terms,
+    # is not publishable. Enforcing that here means no code path can quietly skip it.
+    dataset = lineage.get("dataset")
+    if not isinstance(dataset, dict):
+        raise BundleIntegrityError("Bundle lineage requires a dataset provenance record")
+    for field_name in ("kind", "key", "license"):
+        if not isinstance(dataset.get(field_name), str) or not dataset[field_name]:
+            raise BundleIntegrityError(
+                f"Dataset provenance requires a non-empty {field_name}"
+            )
+
     split = lineage.get("split")
     if not isinstance(split, dict):
         raise BundleIntegrityError("Bundle lineage requires a split contract")
@@ -150,7 +166,7 @@ def _validated_number(value: Any, label: str) -> float:
     return result
 
 
-def _validate_evaluation_report(report: Any, lineage: Dict[str, Any]) -> None:
+def _validate_evaluation_report(report: Any, lineage: dict[str, Any]) -> None:
     if not isinstance(report, dict):
         raise BundleIntegrityError("Evaluation report must be a JSON object")
     status = report.get("evaluation_status")
@@ -267,7 +283,7 @@ def validate_bundle(
     *,
     require_evaluated: bool = True,
     require_gate_passed: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Validate required files, manifest schema, checksums, and gate state."""
     bundle_dir = Path(bundle_path)
     _recover_interrupted_replacement(bundle_dir)
@@ -325,7 +341,7 @@ def load_trusted_bundle(
     bundle_path: str,
     *,
     require_gate_passed: bool = False,
-) -> Tuple[Any, Dict[str, Any], Dict[str, Any]]:
+) -> tuple[Any, dict[str, Any], dict[str, Any]]:
     """Load a checksum-valid bundle known to come from a trusted source."""
     bundle_dir = Path(bundle_path)
     manifest = validate_bundle(
@@ -368,7 +384,7 @@ def load_trusted_bundle(
     return model, transformers, manifest
 
 
-def read_bundle_json(bundle_path: str, filename: str) -> Dict[str, Any]:
+def read_bundle_json(bundle_path: str, filename: str) -> dict[str, Any]:
     """Read a checksum-validated JSON artifact without loading pickle content."""
     if filename not in {TRAINING_METRICS_FILE, LINEAGE_FILE, EVALUATION_REPORT_FILE}:
         raise ValueError(f"Unsupported JSON bundle artifact: {filename}")
