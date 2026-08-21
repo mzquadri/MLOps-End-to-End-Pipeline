@@ -14,8 +14,9 @@ import hashlib
 import logging
 import os
 import pickle
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 from scipy.sparse import hstack, spmatrix
@@ -39,7 +40,7 @@ class FeatureStore:
     """
 
     def __init__(
-        self, config: Dict[str, Any], cache_dir: str = "data/feature_cache"
+        self, config: dict[str, Any], cache_dir: str = "data/feature_cache"
     ) -> None:
         self.config = config
         self.cache_dir = cache_dir
@@ -49,43 +50,69 @@ class FeatureStore:
         self.label_column = data_cfg.get("label_column", "sentiment")
         self.max_features = data_cfg.get("max_features", 10_000)
 
-        self.tfidf: Optional[TfidfVectorizer] = None
-        self.scaler: Optional[StandardScaler] = None
-        self._feature_metadata: Dict[str, Any] = {}
+        self.tfidf: TfidfVectorizer | None = None
+        self.scaler: StandardScaler | None = None
+        self._feature_metadata: dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Cache helpers
     # ------------------------------------------------------------------
 
-    def _cache_key(self, df: pd.DataFrame, prefix: str) -> str:
-        """Deterministic cache key from DataFrame contents."""
-        content_hash = hashlib.md5(
-            pd.util.hash_pandas_object(df).values.tobytes()
-        ).hexdigest()[:10]
-        return f"{prefix}_{content_hash}"
+    def _cache_key(
+        self, df_train: pd.DataFrame, df_test: pd.DataFrame | None, prefix: str
+    ) -> str:
+        """Deterministic cache key covering every frame the result depends on.
 
-    def _load_cache(self, key: str) -> Optional[Any]:
-        path = os.path.join(self.cache_dir, f"{key}.pkl")
-        if os.path.exists(path):
-            logger.info("Cache HIT: %s", key)
-            with open(path, "rb") as f:
-                return pickle.load(f)
-        return None
+        Keying on the training frame alone was a bug: changing only the held-out frame
+        returned a stale test matrix from the cache.
+        """
+        digest = hashlib.sha256()
+        for frame in (df_train, df_test):
+            if frame is None:
+                digest.update(b"none")
+                continue
+            digest.update(pd.util.hash_pandas_object(frame).values.tobytes())
+        digest.update(str(self.max_features).encode())
+        return f"{prefix}_{digest.hexdigest()[:12]}"
 
-    def _save_cache(self, key: str, obj: Any) -> None:
+    def _load_cache(self, key: str) -> Any | None:
+        """Restore matrices *and* the fitted state the caller depends on.
+
+        A cache that returns the value but not the state behind it is worse than no
+        cache. The old version returned the matrices and left `self.tfidf` unset, so
+        the next `export_transformers()` raised on what looked like a successful run.
+        """
+        path = os.path.join(self.cache_dir, f"{key}.joblib")
+        if not os.path.exists(path):
+            return None
+        logger.info("Cache HIT: %s", key)
+        entry = joblib.load(path)
+        self.tfidf = entry["tfidf"]
+        self.scaler = entry["scaler"]
+        self._feature_metadata = dict(entry["metadata"])
+        return entry["matrices"]
+
+    def _save_cache(self, key: str, matrices: Any) -> None:
         os.makedirs(self.cache_dir, exist_ok=True)
-        path = os.path.join(self.cache_dir, f"{key}.pkl")
-        with open(path, "wb") as f:
-            pickle.dump(obj, f)
-        logger.info("Cached → %s", path)
+        path = os.path.join(self.cache_dir, f"{key}.joblib")
+        joblib.dump(
+            {
+                "matrices": matrices,
+                "tfidf": self.tfidf,
+                "scaler": self.scaler,
+                "metadata": self.metadata,
+            },
+            path,
+        )
+        logger.info("Cached -> %s", path)
 
     # ------------------------------------------------------------------
     # TF-IDF features
     # ------------------------------------------------------------------
 
     def compute_tfidf(
-        self, train_texts: pd.Series, test_texts: Optional[pd.Series] = None
-    ) -> Tuple[spmatrix, Optional[spmatrix]]:
+        self, train_texts: pd.Series, test_texts: pd.Series | None = None
+    ) -> tuple[spmatrix, spmatrix | None]:
         """Fit TF-IDF on training texts and optionally transform test texts."""
         self.tfidf = TfidfVectorizer(
             max_features=self.max_features,
@@ -116,9 +143,9 @@ class FeatureStore:
     def compute_numeric_features(
         self,
         df_train: pd.DataFrame,
-        df_test: Optional[pd.DataFrame] = None,
-        columns: Optional[List[str]] = None,
-    ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        df_test: pd.DataFrame | None = None,
+        columns: list[str] | None = None,
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         """Scale numeric columns with StandardScaler."""
         if columns is None:
             exclude = {self.text_column, f"{self.text_column}_clean", self.label_column}
@@ -151,15 +178,15 @@ class FeatureStore:
     def get_features(
         self,
         df_train: pd.DataFrame,
-        df_test: Optional[pd.DataFrame] = None,
+        df_test: pd.DataFrame | None = None,
         use_cache: bool = True,
-    ) -> Tuple[Any, Optional[Any]]:
+    ) -> tuple[Any, Any | None]:
         """
         Build full feature matrix (TF-IDF + numeric) for train and test sets.
 
         Returns sparse matrices combining text and numeric features.
         """
-        cache_key = self._cache_key(df_train, "features")
+        cache_key = self._cache_key(df_train, df_test, "features")
 
         if use_cache:
             cached = self._load_cache(cache_key)
@@ -206,11 +233,22 @@ class FeatureStore:
             self._save_cache(cache_key, result)
         return result
 
+    def fit_transform_train(self, df_train: pd.DataFrame) -> Any:
+        """Fit every transformer on the training partition and return its matrix.
+
+        The only method in this class that fits anything. Everything downstream -
+        validation, test, and serving - goes through `transform`, which cannot fit.
+        Keeping the fitting surface this small is what makes the leakage claim
+        checkable rather than a comment.
+        """
+        features, _ = self.get_features(df_train, None, use_cache=False)
+        return features
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
 
-    def export_transformers(self) -> Dict[str, Any]:
+    def export_transformers(self) -> dict[str, Any]:
         """Return the fitted preprocessing state for inclusion in a bundle."""
         if self.tfidf is None:
             raise RuntimeError("Feature transformers have not been fitted.")
@@ -220,7 +258,7 @@ class FeatureStore:
             "metadata": self.metadata,
         }
 
-    def import_transformers(self, transformers: Dict[str, Any]) -> None:
+    def import_transformers(self, transformers: dict[str, Any]) -> None:
         """Use preprocessing state loaded from the same trusted model bundle."""
         if "tfidf" not in transformers:
             raise ValueError("Transformer bundle is missing 'tfidf'.")
@@ -285,7 +323,7 @@ class FeatureStore:
         return transformed
 
     def transform_single(
-        self, text: str, numeric_values: Optional[Dict[str, float]] = None
+        self, text: str, numeric_values: dict[str, float] | None = None
     ) -> Any:
         """Transform a single input for inference."""
         if self.tfidf is None:
@@ -319,5 +357,5 @@ class FeatureStore:
         return transformed
 
     @property
-    def metadata(self) -> Dict[str, Any]:
+    def metadata(self) -> dict[str, Any]:
         return dict(self._feature_metadata)
