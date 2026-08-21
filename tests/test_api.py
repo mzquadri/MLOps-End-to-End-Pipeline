@@ -1,184 +1,169 @@
+"""Tests for the inference service.
+
+Every client here is built with `with TestClient(app)`, which is what actually runs the
+application lifespan. The previous suite used a bare `TestClient(app)`, so startup never
+executed and the tests silently exercised a service that had never tried to load a model.
+Two of them would have failed immediately if it had.
 """
-Tests for the FastAPI serving endpoints.
-"""
+
+from __future__ import annotations
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-def client():
-    """Create a test client with the app (model may not be loaded)."""
+def unready_client(monkeypatch, tmp_path):
+    """A service pointed at a bundle that does not exist.
+
+    It must start anyway and be able to explain itself, rather than dying during
+    startup and leaving an operator with a crash loop and no endpoint to query.
+    """
     from src.serve import app
 
-    return TestClient(app)
+    monkeypatch.setenv("MODEL_BUNDLE_PATH", str(tmp_path / "no-such-bundle"))
+    monkeypatch.delenv("REQUIRE_MODEL_AT_STARTUP", raising=False)
+    with TestClient(app) as client:
+        yield client
 
 
-# ---------------------------------------------------------------------------
-# Health endpoint
-# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module")
+def production_bundle(tmp_path_factory):
+    """Run the real pipeline once and promote a bundle to production."""
+    from src.pipeline import run
+
+    workspace = tmp_path_factory.mktemp("serving")
+    with open("configs/ci_config.yaml", encoding="utf-8") as handle:
+        config = yaml.safe_load(handle)
+
+    summary = run(
+        config,
+        candidate_dir=str(workspace / "candidates"),
+        registry_dir=str(workspace / "registry"),
+        results_dir=str(workspace / "results"),
+    )
+    return workspace, summary
 
 
-class TestHealthEndpoint:
-    def test_health_returns_200(self, client):
-        response = client.get("/health")
+@pytest.fixture
+def ready_client(monkeypatch, production_bundle):
+    """A service loading a genuinely promoted bundle through the real code path."""
+    from src.serve import app
+
+    workspace, summary = production_bundle
+    bundle = workspace / "registry" / "sentiment-classifier" / summary["registry"]["version"]
+    monkeypatch.setenv("MODEL_BUNDLE_PATH", str(bundle))
+    with TestClient(app) as client:
+        yield client
+
+
+class TestUnreadyService:
+    def test_health_is_live_but_reports_degraded(self, unready_client):
+        response = unready_client.get("/health")
         assert response.status_code == 200
-        data = response.json()
-        assert "status" in data
-        assert "model_loaded" in data
-        assert "uptime_seconds" in data
-        assert "total_predictions" in data
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["model_loaded"] is False
+        assert body["detail"], "a degraded service must say why"
 
-    def test_health_reports_model_status(self, client):
-        response = client.get("/health")
-        data = response.json()
-        # Model may or may not be loaded in test; just check field exists
-        assert isinstance(data["model_loaded"], bool)
+    def test_ready_returns_503(self, unready_client):
+        response = unready_client.get("/ready")
+        assert response.status_code == 503
+        assert response.json()["ready"] is False
 
-
-# ---------------------------------------------------------------------------
-# Predict endpoint (without model loaded)
-# ---------------------------------------------------------------------------
-
-
-class TestPredictEndpointNoModel:
-    def test_predict_returns_503_without_model(self, client):
-        """When no model is loaded, predict should return 503."""
-        from src.serve import state
-
-        # Ensure model is not loaded
-        if state.model is not None:
-            pytest.skip("Model is loaded in this environment")
-        response = client.post("/predict", json={"text": "This is a test review"})
+    def test_predict_returns_503(self, unready_client):
+        response = unready_client.post("/predict", json={"text": "a review"})
         assert response.status_code == 503
 
-    def test_batch_predict_returns_503_without_model(self, client):
-        from src.serve import state
-
-        if state.model is not None:
-            pytest.skip("Model is loaded in this environment")
-        response = client.post("/predict/batch", json={"texts": ["test review"]})
+    def test_batch_predict_returns_503(self, unready_client):
+        response = unready_client.post("/predict/batch", json={"texts": ["a review"]})
         assert response.status_code == 503
 
+    def test_fail_fast_mode_refuses_to_start(self, monkeypatch, tmp_path):
+        """The opt-in behaviour for deployments that prefer not to start at all."""
+        from src.serve import app
 
-# ---------------------------------------------------------------------------
-# Predict endpoint (with mock model)
-# ---------------------------------------------------------------------------
+        monkeypatch.setenv("MODEL_BUNDLE_PATH", str(tmp_path / "missing"))
+        monkeypatch.setenv("REQUIRE_MODEL_AT_STARTUP", "1")
+        with pytest.raises(RuntimeError):
+            with TestClient(app):
+                pass
 
 
-class TestPredictEndpointWithModel:
-    @pytest.fixture(autouse=True)
-    def setup_mock_model(self):
-        """Set up a minimal mock model + transformers for prediction tests."""
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.linear_model import LogisticRegression
+class TestReadyService:
+    def test_ready_returns_200_with_the_promoted_version(self, ready_client):
+        response = ready_client.get("/ready")
+        assert response.status_code == 200
+        assert response.json()["ready"] is True
+        assert response.json()["model_version"] == "v1"
 
-        from src.feature_store import FeatureStore
-        from src.serve import state
+    def test_health_is_healthy(self, ready_client):
+        body = ready_client.get("/health").json()
+        assert body["status"] == "healthy"
+        assert body["model_loaded"] is True
+        assert body["detail"] is None
 
-        # Train a tiny model
-        texts = [
-            "great product love it",
-            "excellent quality good",
-            "terrible awful bad",
-            "horrible waste money",
-        ]
-        labels = ["positive", "positive", "negative", "negative"]
-
-        tfidf = TfidfVectorizer(max_features=50)
-        X = tfidf.fit_transform(texts)
-        model = LogisticRegression(max_iter=200)
-        model.fit(X, labels)
-
-        # Set state manually
-        state.model = model
-        store = FeatureStore({"data": {"text_column": "review_text"}})
-        store.import_transformers(
-            {
-                "tfidf": tfidf,
-                "scaler": None,
-                "metadata": {
-                    "numeric_columns": [],
-                    "total_features": X.shape[1],
-                },
-            }
+    def test_single_prediction_uses_the_bundled_transformers(self, ready_client):
+        response = ready_client.post(
+            "/predict", json={"text": "this product is excellent and works great"}
         )
-        state.feature_store = store
-        state.model_version = "test-v1"
-        state.prediction_count = 0
-
-        yield
-
-        # Teardown
-        state.model = None
-        state.feature_store = None
-
-    def test_single_prediction(self, client):
-        response = client.post("/predict", json={"text": "This is a great product"})
         assert response.status_code == 200
-        data = response.json()
-        assert "prediction" in data
-        assert data["prediction"] in ("positive", "negative")
-        assert "confidence" in data
-        assert "latency_ms" in data
-        assert data["confidence"] > 0
+        body = response.json()
+        assert body["prediction"] in {"positive", "negative"}
+        assert 0.0 < body["confidence"] <= 1.0
+        assert body["latency_ms"] >= 0
+        assert body["model_version"] == "v1"
 
-    def test_batch_prediction(self, client):
-        response = client.post(
+    def test_batch_prediction(self, ready_client):
+        response = ready_client.post(
             "/predict/batch",
-            json={"texts": ["great quality", "terrible product", "love it"]},
+            json={"texts": ["excellent quality", "terrible waste of money", "i love it"]},
         )
         assert response.status_code == 200
-        data = response.json()
-        assert "predictions" in data
-        assert len(data["predictions"]) == 3
-        assert "total_latency_ms" in data
+        assert len(response.json()["predictions"]) == 3
 
-    def test_prediction_increments_count(self, client):
+    def test_prediction_count_increments(self, ready_client):
+        before = ready_client.get("/metrics").json()["total_predictions"]
+        ready_client.post("/predict", json={"text": "a review"})
+        after = ready_client.get("/metrics").json()["total_predictions"]
+        assert after == before + 1
+
+    def test_metrics_reports_the_recent_window(self, ready_client):
+        ready_client.post("/predict", json={"text": "excellent product"})
+        body = ready_client.get("/metrics").json()
+        assert body["ready"] is True
+        assert body["window_size"] >= 1
+        assert sum(body["recent_prediction_distribution"].values()) == body["window_size"]
+
+
+class TestPrivacy:
+    def test_prediction_log_never_stores_request_text(self, ready_client):
         from src.serve import state
 
-        initial = state.prediction_count
-        client.post("/predict", json={"text": "test review"})
-        assert state.prediction_count == initial + 1
+        secret = "an unusually distinctive private review sentence"
+        assert ready_client.post("/predict", json={"text": secret}).status_code == 200
+        assert secret not in repr(list(state.prediction_log))
+        assert state.prediction_log[-1]["text_length"] == len(secret)
 
-    def test_prediction_log_does_not_store_raw_text(self, client):
-        from src.serve import state
+    def test_prediction_log_is_bounded(self, ready_client):
+        """An unbounded log is a slow memory leak in a long-lived service."""
+        from src.serve import PREDICTION_LOG_CAPACITY, state
 
-        secret_text = "private review content"
-        response = client.post("/predict", json={"text": secret_text})
-        assert response.status_code == 200
-        assert secret_text not in repr(state.prediction_log)
-        assert state.prediction_log[-1]["text_length"] == len(secret_text)
-
-
-# ---------------------------------------------------------------------------
-# Metrics endpoint
-# ---------------------------------------------------------------------------
-
-
-class TestMetricsEndpoint:
-    def test_metrics_returns_200(self, client):
-        response = client.get("/metrics")
-        assert response.status_code == 200
-        data = response.json()
-        assert "total_predictions" in data
-        assert "uptime_seconds" in data
-
-
-# ---------------------------------------------------------------------------
-# Request validation
-# ---------------------------------------------------------------------------
+        for _ in range(PREDICTION_LOG_CAPACITY + 25):
+            ready_client.post("/predict", json={"text": "short review"})
+        assert len(state.prediction_log) == PREDICTION_LOG_CAPACITY
 
 
 class TestRequestValidation:
-    def test_empty_text_rejected(self, client):
-        response = client.post("/predict", json={"text": ""})
-        assert response.status_code == 422  # Pydantic validation error
+    def test_empty_text_rejected(self, unready_client):
+        assert unready_client.post("/predict", json={"text": ""}).status_code == 422
 
-    def test_missing_text_rejected(self, client):
-        response = client.post("/predict", json={})
+    def test_missing_text_rejected(self, unready_client):
+        assert unready_client.post("/predict", json={}).status_code == 422
+
+    def test_batch_size_is_capped(self, unready_client):
+        response = unready_client.post(
+            "/predict/batch", json={"texts": ["review"] * 101}
+        )
         assert response.status_code == 422

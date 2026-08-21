@@ -1,149 +1,12 @@
-"""
-Tests for model training, feature store, and evaluation.
-"""
+"""Tests for model building, the feature store, training, evaluation and the registry."""
 
 import tempfile
+from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import pytest
 from sklearn.model_selection import train_test_split
 
-
-def create_passing_bundle(path):
-    """Create a small trusted bundle for registry tests."""
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.linear_model import LogisticRegression
-
-    from src.model_bundle import create_candidate_bundle, update_evaluation_report
-
-    texts = ["great product", "excellent item", "bad product", "awful item"]
-    labels = ["positive", "positive", "negative", "negative"]
-    tfidf = TfidfVectorizer()
-    X = tfidf.fit_transform(texts)
-    model = LogisticRegression(max_iter=100).fit(X, labels)
-    create_candidate_bundle(
-        str(path),
-        model,
-        {
-            "tfidf": tfidf,
-            "scaler": None,
-            "metadata": {"numeric_columns": [], "total_features": X.shape[1]},
-        },
-        {"accuracy": 1.0, "f1_weighted": 1.0},
-        {
-            "data_hash": "test-data",
-            "feature_schema": {
-                "label_column": "sentiment",
-                "numeric_columns": [],
-                "text_column": "review_text",
-            },
-            "split": {
-                "random_state": 42,
-                "stratified": True,
-                "test_size": 0.2,
-            },
-        },
-        X.shape[1],
-    )
-    update_evaluation_report(
-        str(path),
-        {
-            "data_hash": "test-data",
-            "evaluation_status": "passed",
-            "metrics": {"accuracy": 1.0, "f1_weighted": 1.0},
-            "latency": {"p95_latency_ms": 1.0},
-            "performance_gate": {
-                "overall_passed": True,
-                "checks": {
-                    "accuracy": {
-                        "value": 1.0,
-                        "threshold": 0.5,
-                        "passed": True,
-                    },
-                    "f1_weighted": {
-                        "value": 1.0,
-                        "threshold": 0.5,
-                        "passed": True,
-                    },
-                    "latency_p95": {
-                        "value": 1.0,
-                        "threshold": 500.0,
-                        "passed": True,
-                    },
-                },
-            },
-        },
-    )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_config():
-    return {
-        "experiment": {"name": "test-experiment"},
-        "data": {
-            "source": "data/reviews.csv",
-            "test_size": 0.2,
-            "random_state": 42,
-            "text_column": "review_text",
-            "label_column": "sentiment",
-            "max_features": 200,
-        },
-        "model": {
-            "type": "logistic_regression",
-            "hyperparameters": {
-                "logistic_regression": {"C": 1.0, "max_iter": 200, "solver": "lbfgs"},
-                "random_forest": {"n_estimators": 10, "max_depth": 5},
-                "svm": {"C": 1.0, "kernel": "rbf"},
-            },
-        },
-        "training": {"cv_folds": 3, "scoring": "f1_weighted"},
-        "validation": {
-            "min_accuracy": 0.5,
-            "min_f1": 0.5,
-            "max_drift_psi": 0.3,
-            "max_latency_ms": 500,
-        },
-        "mlflow": {"tracking_uri": "sqlite:///test_mlruns.db"},
-    }
-
-
-@pytest.fixture
-def sample_df():
-    rng = np.random.default_rng(0)
-    n = 300
-    positive_templates = [
-        "great product love it",
-        "excellent quality highly recommend",
-        "best purchase ever made",
-    ]
-    negative_templates = [
-        "terrible quality broke fast",
-        "waste of money do not buy",
-        "horrible experience avoid",
-    ]
-    texts, sentiments = [], []
-    for i in range(n):
-        if rng.random() > 0.45:
-            texts.append(rng.choice(positive_templates) + f" extra words {i}")
-            sentiments.append("positive")
-        else:
-            texts.append(rng.choice(negative_templates) + f" extra words {i}")
-            sentiments.append("negative")
-    return pd.DataFrame(
-        {
-            "review_text": texts,
-            "sentiment": sentiments,
-            "review_length": [len(t) for t in texts],
-            "word_count": [len(t.split()) for t in texts],
-        }
-    )
-
+from tests.conftest import create_passing_bundle
 
 # ---------------------------------------------------------------------------
 # Build Model
@@ -252,9 +115,13 @@ class TestTrainModel:
         X_train, X_test = store.get_features(df_train, df_test, use_cache=False)
 
         model, metrics = train_model(X_train, y_train, X_test, y_test, sample_config)
-        assert "accuracy" in metrics
-        assert "f1_weighted" in metrics
-        assert metrics["accuracy"] > 0
+        # Training reports validation-split metrics and a baseline, never test metrics.
+        assert "validation_accuracy" in metrics
+        assert "validation_f1_weighted" in metrics
+        assert "baseline_accuracy" in metrics
+        assert "cv_mean" in metrics
+        assert metrics["validation_accuracy"] > 0
+        assert "accuracy" not in metrics, "raw 'accuracy' is ambiguous about its split"
         assert hasattr(model, "predict")
 
 
@@ -282,6 +149,10 @@ class TestModelEvaluator:
         assert "accuracy" in metrics
         assert "confusion_matrix" in metrics
         assert "classification_report" in metrics
+        assert metrics["baseline_strategy"] == "most_frequent"
+        assert metrics["accuracy_over_baseline"] == pytest.approx(
+            metrics["accuracy"] - metrics["baseline_accuracy"]
+        )
 
     def test_latency_measurement(self, sample_config, sample_df):
         from src.evaluate import ModelEvaluator
@@ -316,7 +187,7 @@ class TestPerformanceGate:
 
         gate = PerformanceGate(sample_config)
         result = gate.evaluate(
-            {"accuracy": 0.90, "f1_weighted": 0.88},
+            {"accuracy": 0.90, "f1_weighted": 0.88, "accuracy_over_baseline": 0.40},
             {"p95_latency_ms": 5.0},
         )
         assert result["overall_passed"] is True
@@ -326,10 +197,26 @@ class TestPerformanceGate:
 
         gate = PerformanceGate(sample_config)
         result = gate.evaluate(
-            {"accuracy": 0.40, "f1_weighted": 0.35},
+            {"accuracy": 0.40, "f1_weighted": 0.35, "accuracy_over_baseline": -0.10},
             {"p95_latency_ms": 5.0},
         )
         assert result["overall_passed"] is False
+
+    def test_fails_when_accuracy_is_high_but_no_better_than_baseline(self, sample_config):
+        """The case a bare accuracy floor cannot catch.
+
+        On a 95/5 imbalanced task, predicting the majority class every time scores 0.95.
+        That clears any reasonable accuracy threshold while being worth nothing.
+        """
+        from src.evaluate import PerformanceGate
+
+        result = PerformanceGate(sample_config).evaluate(
+            {"accuracy": 0.95, "f1_weighted": 0.93, "accuracy_over_baseline": 0.01},
+            {"p95_latency_ms": 5.0},
+        )
+        assert result["overall_passed"] is False
+        assert result["checks"]["accuracy"]["passed"] is True
+        assert result["checks"]["accuracy_over_baseline"]["passed"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +234,7 @@ class TestModelRegistry:
             tempfile.TemporaryDirectory() as reg_dir,
             tempfile.TemporaryDirectory() as model_dir,
         ):
-            create_passing_bundle(model_dir)
+            create_passing_bundle(Path(model_dir))
 
             registry = LocalModelRegistry(registry_dir=reg_dir)
             v = registry.register_model(
@@ -368,7 +255,7 @@ class TestModelRegistry:
             tempfile.TemporaryDirectory() as reg_dir,
             tempfile.TemporaryDirectory() as model_dir,
         ):
-            create_passing_bundle(model_dir)
+            create_passing_bundle(Path(model_dir))
 
             registry = LocalModelRegistry(registry_dir=reg_dir)
             registry.register_model(
