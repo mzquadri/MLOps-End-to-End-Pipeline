@@ -1,25 +1,44 @@
-version: "3.8"
+# Local serving stack.
+#
+# This starts the inference API against a bundle you have already trained, evaluated
+# and promoted. It does not run the pipeline - promotion is a decision, not a container
+# start-up side effect.
+#
+#   python -m src.train    --config configs/train_config.yaml
+#   python -m src.evaluate --bundle_path models/candidates/sentiment-classifier
+#   python -m src.model_registry --register --bundle_path models/candidates/sentiment-classifier --stage staging
+#   python -m src.model_registry --promote v1
+#   docker compose up --build api
 
 services:
-  mlops-api:
+  api:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+      # Read-only: the service loads a bundle, it never writes one.
+      - ./models:/app/models:ro
     environment:
-      - MODEL_BUNDLE_PATH=models/registry/sentiment-classifier/v1
-      - LOG_LEVEL=INFO
+      MODEL_BUNDLE_PATH: models/registry/sentiment-classifier/v1
+      LOG_LEVEL: INFO
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # Uses the image's own interpreter; python:3.11-slim has no curl.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).status==200 else 1)"
       interval: 30s
-      timeout: 10s
+      timeout: 5s
+      start_period: 10s
       retries: 3
 
+  # Optional. Only useful with mlflow.enabled: true in the training config.
+  # Start it explicitly: `docker compose up mlflow`.
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    image: ghcr.io/mlflow/mlflow:v2.22.0
+    profiles: ["tracking"]
     ports:
       - "5000:5000"
     volumes:

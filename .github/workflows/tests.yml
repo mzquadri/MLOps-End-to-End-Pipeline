@@ -1,16 +1,89 @@
-name: Tests
+name: CI
 
 on:
   push:
   pull_request:
 
+# Three jobs with deliberately different dependencies, so a failure says something
+# specific: the code broke, the reference run stopped reproducing, or the container
+# regressed. A single job that does everything only ever says "CI is red".
 jobs:
-  test:
+  quality:
+    name: Lint and offline tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit and integration tests
+        # No network and no Docker: this job must pass on any runner, every time.
+        run: pytest -m "not docker" --durations=10
+
+  reference-run:
+    name: Reference run on licensed data
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
       - run: pip install -r requirements.txt
-      - run: python -m pytest -q
+
+      # 84 KB, keyed by the pinned checksum, so a cache hit is provably the right bytes
+      # and a changed checksum can never silently reuse the old archive.
+      - name: Cache the dataset archive
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: uci-sentiment-afc26626d710899948693e1a61405dce197f57ffa719fa1130d346b4cc095343
+
+      - name: Run the full pipeline
+        # Trains, evaluates against the gate, registers and promotes. Exits non-zero if
+        # the gate fails, so a quality regression fails CI rather than being reported.
+        run: python -m src.pipeline --config configs/train_config.yaml
+
+      - name: Check the published result against the documented one
+        run: python scripts/check_reference_run.py
+
+      - name: Upload the run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-run
+          path: |
+            results/reference_run.json
+            results/evaluation_curves.json
+          if-no-files-found: warn
+
+  container:
+    name: Container integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - run: pip install -r requirements-dev.txt
+
+      - name: Build the image and serve a real prediction
+        # Builds, mounts a bundle produced by the pipeline, waits for readiness and
+        # makes an HTTP prediction. A container that merely builds proves nothing.
+        run: pytest tests/test_docker.py -m docker -v
