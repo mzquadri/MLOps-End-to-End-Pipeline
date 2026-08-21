@@ -1,88 +1,118 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 470" font-family="Segoe UI, Arial, sans-serif">
-  <rect width="940" height="470" fill="#ffffff"/>
-  <text x="470" y="32" text-anchor="middle" font-size="20" font-weight="600" fill="#111827">End-to-end MLOps lifecycle</text>
-  <text x="470" y="54" text-anchor="middle" font-size="13" fill="#6b7280">One feature/model bundle from training through serving</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 720" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="End-to-end MLOps lifecycle: data acquisition, validation, splitting, feature fitting, training, bundling, evaluation, promotion gate, registry and serving">
+  <title>End-to-end MLOps lifecycle</title>
+  <rect width="980" height="720" fill="#ffffff"/>
 
   <defs>
-    <marker id="a3" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
       <path d="M0,0 L10,4 L0,8 Z" fill="#374151"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#b91c1c"/>
     </marker>
   </defs>
 
+  <text x="490" y="36" text-anchor="middle" font-size="21" font-weight="600" fill="#111827">End-to-end MLOps lifecycle</text>
+  <text x="490" y="58" text-anchor="middle" font-size="13" fill="#6b7280">Every box below exists in this repository. Nothing is aspirational.</text>
+
   <!-- Row 1 -->
-  <rect x="30" y="90" width="150" height="86" rx="10" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.5"/>
-  <text x="105" y="120" text-anchor="middle" font-size="14" font-weight="600" fill="#111827">Raw data</text>
-  <text x="105" y="141" text-anchor="middle" font-size="11" fill="#4b5563">reviews.csv or</text>
-  <text x="105" y="157" text-anchor="middle" font-size="11" fill="#4b5563">synthetic demo set</text>
+  <rect x="40" y="86" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="60" y="110" font-size="11" font-weight="700" fill="#2563eb">1 · ACQUIRE</text>
+  <text x="60" y="132" font-size="14" font-weight="600" fill="#111827">Dataset + provenance</text>
+  <text x="60" y="152" font-size="11" fill="#4b5563">UCI Sentiment Labelled Sentences</text>
+  <text x="60" y="168" font-size="11" fill="#4b5563">CC BY 4.0 · SHA-256 pinned · cached</text>
+  <text x="60" y="182" font-size="11" fill="#6b7280">synthetic fixture for CI only</text>
 
-  <line x1="180" y1="133" x2="206" y2="133" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <line x1="290" y1="138" x2="336" y2="138" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <rect x="210" y="90" width="180" height="86" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
-  <text x="300" y="116" text-anchor="middle" font-size="14" font-weight="600" fill="#9a3412">Data pipeline</text>
-  <text x="300" y="136" text-anchor="middle" font-size="11" fill="#374151">validate: nulls, duplicates,</text>
-  <text x="300" y="151" text-anchor="middle" font-size="11" fill="#374151">class balance, drift (KS + PSI)</text>
-  <text x="300" y="168" text-anchor="middle" font-size="11" fill="#6b7280">SHA-256 manifest per version</text>
+  <rect x="350" y="86" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="370" y="110" font-size="11" font-weight="700" fill="#2563eb">2 · VALIDATE</text>
+  <text x="370" y="132" font-size="14" font-weight="600" fill="#111827">Quality checks that block</text>
+  <text x="370" y="152" font-size="11" fill="#4b5563">nulls · duplicates · class balance</text>
+  <text x="370" y="168" font-size="11" fill="#4b5563">drift: KS + PSI · on_failure: error</text>
+  <text x="370" y="182" font-size="11" fill="#6b7280">SHA-256 content hash per version</text>
 
-  <line x1="390" y1="133" x2="416" y2="133" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <line x1="600" y1="138" x2="646" y2="138" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <rect x="420" y="90" width="170" height="86" rx="10" fill="#ecfdf5" stroke="#16a34a" stroke-width="2"/>
-  <text x="505" y="116" text-anchor="middle" font-size="14" font-weight="600" fill="#166534">Feature store</text>
-  <text x="505" y="136" text-anchor="middle" font-size="11" fill="#374151">fit TF-IDF + scaler on train</text>
-  <text x="505" y="151" text-anchor="middle" font-size="11" fill="#374151">transform-only for held-out</text>
-  <text x="505" y="166" text-anchor="middle" font-size="11" fill="#374151">state packed with model</text>
+  <rect x="660" y="86" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="680" y="110" font-size="11" font-weight="700" fill="#2563eb">3 · SPLIT</text>
+  <text x="680" y="132" font-size="14" font-weight="600" fill="#111827">Train / validation / test</text>
+  <text x="680" y="152" font-size="11" fill="#4b5563">1800 / 600 / 600 · stratified</text>
+  <text x="680" y="168" font-size="11" fill="#4b5563">one seed derives both splits</text>
+  <text x="680" y="182" font-size="11" fill="#6b7280">test is opened once, in step 7</text>
 
-  <line x1="590" y1="133" x2="616" y2="133" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
-
-  <rect x="620" y="90" width="180" height="86" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
-  <text x="710" y="116" text-anchor="middle" font-size="14" font-weight="600" fill="#1e40af">Training</text>
-  <text x="710" y="136" text-anchor="middle" font-size="11" fill="#374151">logistic regression / random</text>
-  <text x="710" y="151" text-anchor="middle" font-size="11" fill="#374151">forest / SVM, stratified CV</text>
-  <text x="710" y="168" text-anchor="middle" font-size="11" fill="#6b7280">params + metrics → MLflow</text>
-
-  <!-- down arrow to row 2 -->
-  <line x1="710" y1="176" x2="710" y2="216" stroke="#374151" stroke-width="1.8"/>
-  <line x1="710" y1="216" x2="300" y2="216" stroke="#374151" stroke-width="1.8" fill="none"/>
-  <line x1="300" y1="216" x2="300" y2="246" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <path d="M910,190 L910,214 L165,214 L165,228" fill="none" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
   <!-- Row 2 -->
-  <rect x="210" y="250" width="180" height="86" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
-  <text x="300" y="276" text-anchor="middle" font-size="14" font-weight="600" fill="#5b21b6">Evaluation</text>
-  <text x="300" y="296" text-anchor="middle" font-size="11" fill="#374151">accuracy, F1, ROC-AUC,</text>
-  <text x="300" y="311" text-anchor="middle" font-size="11" fill="#374151">confusion matrix, report</text>
-  <text x="300" y="328" text-anchor="middle" font-size="11" fill="#6b7280">report embedded in bundle</text>
+  <rect x="40" y="232" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="60" y="256" font-size="11" font-weight="700" fill="#2563eb">4 · FEATURES</text>
+  <text x="60" y="278" font-size="14" font-weight="600" fill="#111827">Fit on train only</text>
+  <text x="60" y="298" font-size="11" fill="#4b5563">TF-IDF (1,2-gram) + StandardScaler</text>
+  <text x="60" y="314" font-size="11" fill="#4b5563">fit_transform_train is the only fit</text>
+  <text x="60" y="328" font-size="11" fill="#6b7280">everything else is transform-only</text>
 
-  <line x1="390" y1="293" x2="416" y2="293" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <line x1="290" y1="284" x2="336" y2="284" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <!-- Gate diamond -->
-  <polygon points="505,246 590,293 505,340 420,293" fill="#fefce8" stroke="#ca8a04" stroke-width="2"/>
-  <text x="505" y="288" text-anchor="middle" font-size="13" font-weight="600" fill="#854d0e">Quality gate</text>
-  <text x="505" y="306" text-anchor="middle" font-size="10" fill="#854d0e">accuracy · F1 · latency</text>
-  <text x="505" y="360" text-anchor="middle" font-size="11" fill="#b91c1c">fail → run rejected (no promotion)</text>
+  <rect x="350" y="232" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="370" y="256" font-size="11" font-weight="700" fill="#2563eb">5 · TRAIN</text>
+  <text x="370" y="278" font-size="14" font-weight="600" fill="#111827">Fit and score on validation</text>
+  <text x="370" y="298" font-size="11" fill="#4b5563">stratified k-fold CV on train</text>
+  <text x="370" y="314" font-size="11" fill="#4b5563">validation metrics + majority baseline</text>
+  <text x="370" y="328" font-size="11" fill="#6b7280">optional MLflow logging</text>
 
-  <line x1="590" y1="293" x2="616" y2="293" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
-  <text x="603" y="282" text-anchor="middle" font-size="11" fill="#166534">pass</text>
+  <line x1="600" y1="284" x2="646" y2="284" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <rect x="620" y="250" width="180" height="86" rx="10" fill="#fdf2f8" stroke="#db2777" stroke-width="2"/>
-  <text x="710" y="276" text-anchor="middle" font-size="14" font-weight="600" fill="#9d174d">Model registry</text>
-  <text x="710" y="296" text-anchor="middle" font-size="11" fill="#374151">checksum-valid bundles</text>
-  <text x="710" y="311" text-anchor="middle" font-size="11" fill="#374151">explicit stage transitions:</text>
-  <text x="710" y="328" text-anchor="middle" font-size="11" fill="#6b7280">none → staging → production</text>
+  <rect x="660" y="232" width="250" height="104" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.8"/>
+  <text x="680" y="256" font-size="11" font-weight="700" fill="#1d4ed8">6 · BUNDLE</text>
+  <text x="680" y="278" font-size="14" font-weight="600" fill="#111827">Atomic candidate bundle</text>
+  <text x="680" y="298" font-size="11" fill="#4b5563">model + transformers + metrics</text>
+  <text x="680" y="314" font-size="11" fill="#4b5563">lineage + manifest · SHA-256 each</text>
+  <text x="680" y="328" font-size="11" fill="#6b7280">written whole or not at all</text>
 
-  <!-- Serve + Docker strip -->
-  <line x1="710" y1="336" x2="710" y2="382" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <path d="M910,336 L910,360 L165,360 L165,374" fill="none" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <rect x="420" y="386" width="290" height="62" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
-  <text x="565" y="410" text-anchor="middle" font-size="14" font-weight="600" fill="#1e40af">FastAPI serving (production stage)</text>
-  <text x="565" y="430" text-anchor="middle" font-size="11" fill="#374151">same-bundle model + features · no fallback · no raw text logs</text>
+  <!-- Row 3 -->
+  <rect x="40" y="378" width="250" height="104" rx="10" fill="#f9fafb" stroke="#9ca3af" stroke-width="1.5"/>
+  <text x="60" y="402" font-size="11" font-weight="700" fill="#2563eb">7 · EVALUATE</text>
+  <text x="60" y="424" font-size="14" font-weight="600" fill="#111827">Held-out test, once</text>
+  <text x="60" y="444" font-size="11" fill="#4b5563">reconstructs the recorded split</text>
+  <text x="60" y="460" font-size="11" fill="#4b5563">accuracy · F1 · ROC-AUC · PR-AUC</text>
+  <text x="60" y="474" font-size="11" fill="#6b7280">confusion matrix · p95 latency</text>
 
-  <rect x="740" y="386" width="170" height="62" rx="10" fill="#f3f4f6" stroke="#6b7280" stroke-width="1.5"/>
-  <text x="825" y="410" text-anchor="middle" font-size="14" font-weight="600" fill="#374151">Docker</text>
-  <text x="825" y="430" text-anchor="middle" font-size="11" fill="#4b5563">image + compose</text>
+  <line x1="290" y1="430" x2="336" y2="430" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
 
-  <line x1="710" y1="417" x2="736" y2="417" stroke="#374151" stroke-width="1.8" marker-end="url(#a3)"/>
+  <rect x="350" y="378" width="250" height="104" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.8"/>
+  <text x="370" y="402" font-size="11" font-weight="700" fill="#b45309">8 · GATE</text>
+  <text x="370" y="424" font-size="14" font-weight="600" fill="#111827">Promotion gate</text>
+  <text x="370" y="444" font-size="11" fill="#4b5563">accuracy · weighted F1 · p95 latency</text>
+  <text x="370" y="460" font-size="11" fill="#4b5563">margin over majority baseline</text>
+  <text x="370" y="474" font-size="11" fill="#6b7280">thresholds from config, not argv</text>
 
-  <!-- CI strip -->
-  <rect x="30" y="386" width="360" height="62" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.5"/>
-  <text x="210" y="410" text-anchor="middle" font-size="13" font-weight="600" fill="#075985">Continuous integration</text>
-  <text x="210" y="430" text-anchor="middle" font-size="11" fill="#374151">GitHub Actions runs the pytest suite on every push and PR</text>
+  <line x1="600" y1="430" x2="646" y2="430" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="623" y="422" text-anchor="middle" font-size="10" font-weight="700" fill="#15803d">pass</text>
+
+  <path d="M475,482 L475,512" fill="none" stroke="#b91c1c" stroke-width="1.8" marker-end="url(#arrowRed)"/>
+  <text x="487" y="502" font-size="10" font-weight="700" fill="#b91c1c">fail</text>
+  <rect x="350" y="514" width="250" height="44" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="1.5"/>
+  <text x="475" y="536" text-anchor="middle" font-size="12" font-weight="600" fill="#991b1b">Not registered · exit code 1</text>
+  <text x="475" y="551" text-anchor="middle" font-size="10" fill="#b91c1c">failure recorded on the candidate</text>
+
+  <rect x="660" y="378" width="250" height="104" rx="10" fill="#f0fdf4" stroke="#15803d" stroke-width="1.8"/>
+  <text x="680" y="402" font-size="11" font-weight="700" fill="#166534">9 · REGISTER</text>
+  <text x="680" y="424" font-size="14" font-weight="600" fill="#111827">Immutable versions</text>
+  <text x="680" y="444" font-size="11" fill="#4b5563">whole-bundle copy · checksums re-checked</text>
+  <text x="680" y="460" font-size="11" fill="#4b5563">staging → production only</text>
+  <text x="680" y="474" font-size="11" fill="#6b7280">previous production auto-archived</text>
+
+  <path d="M785,482 L785,566 L490,566 L490,588" fill="none" stroke="#374151" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Serving -->
+  <rect x="140" y="592" width="700" height="62" rx="10" fill="#f9fafb" stroke="#374151" stroke-width="1.8"/>
+  <text x="160" y="614" font-size="11" font-weight="700" fill="#2563eb">10 · SERVE</text>
+  <text x="260" y="614" font-size="14" font-weight="600" fill="#111827">FastAPI · loads exactly one production bundle · non-root container</text>
+  <text x="160" y="636" font-size="11" fill="#4b5563">/health liveness · /ready 503 until usable · /predict · /predict/batch · /metrics · no raw request text is ever logged</text>
+
+  <!-- CI band -->
+  <rect x="40" y="672" width="900" height="34" rx="8" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.2"/>
+  <text x="60" y="694" font-size="11" font-weight="700" fill="#374151">CI</text>
+  <text x="100" y="694" font-size="11" fill="#4b5563">lint + offline tests  ·  reference run on the licensed dataset  ·  container build, readiness and a real HTTP prediction</text>
 </svg>
