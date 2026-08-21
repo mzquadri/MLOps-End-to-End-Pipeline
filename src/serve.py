@@ -1,27 +1,40 @@
-"""
-Serving Module
-==============
-FastAPI inference service with health checks, batch prediction,
-and prediction logging.  Designed for Docker deployment.
+"""FastAPI inference service backed by exactly one validated production bundle.
+
+Liveness and readiness are separate here, and the distinction matters:
+
+* `/health` always answers while the process is alive. It reports whether a model is
+  loaded, and why not if it isn't.
+* `/ready` answers 503 until a model is actually usable. This is the endpoint a load
+  balancer or orchestrator should gate traffic on.
+
+The service starts even when no bundle can be loaded. That is a deliberate change: it
+used to raise during startup, which killed the process, made the "degraded" branch of
+`/health` unreachable, and left an operator with a crash loop and no endpoint to ask
+what was wrong. Set `REQUIRE_MODEL_AT_STARTUP=1` to restore fail-fast behaviour where a
+deployment would rather not start at all than start unready.
 
 Usage:
     python -m src.serve --bundle_path models/registry/sentiment-classifier/v1
-    # Then visit http://127.0.0.1:8000/docs for interactive API docs.
 """
+
+from __future__ import annotations
 
 import argparse
 import json
 import logging
 import os
 import time
+from collections import deque
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
+
+PREDICTION_LOG_CAPACITY = 500
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -38,12 +51,12 @@ class PredictRequest(BaseModel):
     text: str = Field(
         ..., min_length=1, description="Review text for sentiment prediction"
     )
-    review_length: Optional[int] = None
-    word_count: Optional[int] = None
+    review_length: int | None = None
+    word_count: int | None = None
 
 
 class BatchPredictRequest(BaseModel):
-    texts: List[str] = Field(..., min_length=1, max_length=100)
+    texts: list[str] = Field(..., min_length=1, max_length=100)
 
 
 class PredictResponse(BaseModel):
@@ -54,7 +67,7 @@ class PredictResponse(BaseModel):
 
 
 class BatchPredictResponse(BaseModel):
-    predictions: List[Dict[str, Any]]
+    predictions: list[dict[str, Any]]
     total_latency_ms: float
     model_version: str
 
@@ -65,6 +78,13 @@ class HealthResponse(BaseModel):
     model_version: str
     uptime_seconds: float
     total_predictions: int
+    detail: str | None = None
+
+
+class ReadyResponse(BaseModel):
+    ready: bool
+    model_version: str
+    detail: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -76,16 +96,28 @@ class AppState:
     """Holds model artifacts and runtime stats."""
 
     def __init__(self) -> None:
-        self.model: Optional[Any] = None
-        self.feature_store: Optional[Any] = None
+        self.model: Any | None = None
+        self.feature_store: Any | None = None
         self.model_version: str = "unknown"
         self.start_time: float = time.time()
         self.prediction_count: int = 0
-        self.prediction_log: List[Dict[str, Any]] = []
+        # Bounded on purpose. The previous unbounded list grew for the lifetime of the
+        # process while only ever being read as the last hundred entries.
+        self.prediction_log: deque[dict[str, Any]] = deque(maxlen=PREDICTION_LOG_CAPACITY)
+        self.load_error: str | None = None
 
     @property
     def ready(self) -> bool:
         return self.model is not None and self.feature_store is not None
+
+    def reset(self) -> None:
+        """Return to the unloaded state. Used by tests and by a failed reload."""
+        self.model = None
+        self.feature_store = None
+        self.model_version = "unknown"
+        self.load_error = None
+        self.prediction_count = 0
+        self.prediction_log.clear()
 
     def load(self, bundle_path: str) -> None:
         """Load one complete, passing bundle from a trusted local registry."""
@@ -132,8 +164,8 @@ class AppState:
         logger.info("Validated production model bundle loaded from %s", bundle)
 
     def predict_single(
-        self, text: str, numeric_values: Optional[Dict[str, float]] = None
-    ) -> Dict[str, Any]:
+        self, text: str, numeric_values: dict[str, float] | None = None
+    ) -> dict[str, Any]:
         """Run prediction on a single text input."""
         if not self.ready:
             raise RuntimeError("A complete model bundle is not loaded.")
@@ -175,11 +207,22 @@ state = AppState()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load model on startup."""
+    """Attempt to load the production bundle, then serve either way.
+
+    A load failure is recorded rather than raised, so the process stays up and can
+    explain itself over `/health`. Set REQUIRE_MODEL_AT_STARTUP=1 for fail-fast.
+    """
     bundle_path = os.environ.get(
         "MODEL_BUNDLE_PATH", "models/registry/sentiment-classifier/v1"
     )
-    state.load(bundle_path)
+    try:
+        state.load(bundle_path)
+    except Exception as exc:  # noqa: BLE001 - reported through /health, not swallowed
+        state.load_error = f"{type(exc).__name__}: {exc}"
+        logger.error("Model bundle could not be loaded: %s", state.load_error)
+        if os.environ.get("REQUIRE_MODEL_AT_STARTUP") == "1":
+            raise
+        logger.warning("Starting unready. /ready will report 503 until a model loads.")
     yield
 
 
@@ -193,13 +236,30 @@ app = FastAPI(
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    """Health check endpoint for monitoring and Docker HEALTHCHECK."""
+    """Liveness. Always 200 while the process is running, with the model state in body."""
     return HealthResponse(
         status="healthy" if state.ready else "degraded",
         model_loaded=state.ready,
         model_version=state.model_version,
         uptime_seconds=round(time.time() - state.start_time, 1),
         total_predictions=state.prediction_count,
+        detail=None if state.ready else (state.load_error or "no model loaded"),
+    )
+
+
+@app.get("/ready", response_model=ReadyResponse)
+async def ready(response: Response):
+    """Readiness. 503 until a validated bundle is actually usable.
+
+    Route traffic on this, not on /health: a live process with no model can accept a
+    connection and fail every prediction, which is the failure mode worth avoiding.
+    """
+    if not state.ready:
+        response.status_code = 503
+    return ReadyResponse(
+        ready=state.ready,
+        model_version=state.model_version,
+        detail=None if state.ready else (state.load_error or "no model loaded"),
     )
 
 
@@ -217,10 +277,11 @@ async def predict(request: PredictRequest):
 
     result = state.predict_single(request.text, numeric_values or None)
 
-    # Log prediction
+    # Structured record for monitoring. Deliberately stores the *length* of the input,
+    # never the input itself, so the log cannot become a copy of user content.
     state.prediction_log.append(
         {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "text_length": len(request.text),
             "prediction": result["prediction"],
             "confidence": result["confidence"],
@@ -258,17 +319,29 @@ async def predict_batch(request: BatchPredictRequest):
 
 @app.get("/metrics")
 async def metrics():
-    """Return prediction statistics for monitoring."""
-    recent = state.prediction_log[-100:] if state.prediction_log else []
-    latencies = [p["latency_ms"] for p in recent]
+    """In-process serving statistics over a bounded recent window.
+
+    This is a JSON summary, not a Prometheus endpoint, and it resets when the process
+    restarts. docs/PRODUCTION.md describes what a real monitoring setup would add and
+    why none of it is pretended at here.
+    """
+    recent = list(state.prediction_log)[-100:]
+    latencies = [entry["latency_ms"] for entry in recent]
+    predicted = [entry["prediction"] for entry in recent]
+    distribution: dict[str, int] = {}
+    for label in predicted:
+        distribution[label] = distribution.get(label, 0) + 1
+
     return {
+        "ready": state.ready,
+        "model_version": state.model_version,
         "total_predictions": state.prediction_count,
-        "recent_avg_latency_ms": round(float(np.mean(latencies)), 3)
-        if latencies
-        else 0,
-        "recent_p95_latency_ms": round(float(np.percentile(latencies, 95)), 3)
-        if latencies
-        else 0,
+        "window_size": len(recent),
+        "recent_avg_latency_ms": round(float(np.mean(latencies)), 3) if latencies else 0,
+        "recent_p95_latency_ms": (
+            round(float(np.percentile(latencies, 95)), 3) if latencies else 0
+        ),
+        "recent_prediction_distribution": distribution,
         "uptime_seconds": round(time.time() - state.start_time, 1),
     }
 

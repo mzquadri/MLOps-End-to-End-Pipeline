@@ -16,9 +16,9 @@ import logging
 import os
 import shutil
 import tempfile
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -49,7 +49,7 @@ class LocalModelRegistry:
 
     # ---- index management -----------------------------------------------
 
-    def _load_index(self) -> Dict[str, Any]:
+    def _load_index(self) -> dict[str, Any]:
         if os.path.exists(self.index_path):
             with open(self.index_path) as f:
                 return json.load(f)
@@ -142,7 +142,7 @@ class LocalModelRegistry:
         entry = {
             "version": version_tag,
             "stage": stage,
-            "registered_at": datetime.utcnow().isoformat(),
+            "registered_at": datetime.now(UTC).isoformat(),
             "metrics": {
                 k: v
                 for k, v in bundle_metrics.items()
@@ -214,7 +214,7 @@ class LocalModelRegistry:
         entry["stage_transition"] = {
             "from": old_stage,
             "to": new_stage,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Demote previous production model if promoting to production
@@ -235,7 +235,7 @@ class LocalModelRegistry:
 
     # ---- querying --------------------------------------------------------
 
-    def get_production_model(self, model_name: str) -> Optional[Dict[str, Any]]:
+    def get_production_model(self, model_name: str) -> dict[str, Any] | None:
         """Return metadata for the current production model (if any)."""
         if model_name not in self._index["models"]:
             return None
@@ -244,12 +244,12 @@ class LocalModelRegistry:
                 return v
         return None
 
-    def list_versions(self, model_name: str) -> List[Dict[str, Any]]:
+    def list_versions(self, model_name: str) -> list[dict[str, Any]]:
         if model_name not in self._index["models"]:
             return []
         return self._index["models"][model_name]["versions"]
 
-    def load_model(self, model_name: str, version: Optional[str] = None) -> Any:
+    def load_model(self, model_name: str, version: str | None = None) -> Any:
         """Load a model from a trusted, checksum-valid registry bundle."""
         if version is None:
             entry = self.get_production_model(model_name)
@@ -269,7 +269,7 @@ class LocalModelRegistry:
 
     # ---- helpers ---------------------------------------------------------
 
-    def _get_version(self, model_name: str, version: str) -> Dict[str, Any]:
+    def _get_version(self, model_name: str, version: str) -> dict[str, Any]:
         if model_name not in self._index["models"]:
             raise KeyError(f"Model '{model_name}' not found in registry.")
         for v in self._index["models"][model_name]["versions"]:
@@ -277,7 +277,7 @@ class LocalModelRegistry:
                 return v
         raise KeyError(f"Version '{version}' not found for model '{model_name}'.")
 
-    def _bundle_path(self, entry: Dict[str, Any]) -> str:
+    def _bundle_path(self, entry: dict[str, Any]) -> str:
         relative_path = entry.get("bundle_path")
         if not isinstance(relative_path, str):
             raise RuntimeError("Registry entry is missing bundle_path")
