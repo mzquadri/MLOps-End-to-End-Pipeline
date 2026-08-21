@@ -13,7 +13,7 @@ trained against.
 The bundle makes model, preprocessing, metrics, lineage, evaluation, and their
 integrity metadata one promotion unit.
 
-## Format 1.0
+## Format 1.1
 
 `manifest.json` is deterministic, sorted JSON with:
 
@@ -23,14 +23,20 @@ integrity metadata one promotion unit.
 - full SHA-256 checksums for the five non-manifest artifacts
 
 `lineage.json` contains safe aggregate provenance only: data content hash, row
-counts, split seed/fraction, feature column names, experiment, and model type. It
-must not contain raw records, credentials, environment variables, or absolute
-paths. `evaluation_report.json` records the evaluated data hash, metrics, latency,
+counts, split seed/fractions, feature column names, experiment, model type, the
+outcome of the input-data validation, and the dataset provenance record. It must
+not contain raw records, credentials, environment variables, or absolute paths.
+
+The dataset record is required. Validation rejects a lineage whose `dataset` is
+missing or lacks a non-empty `kind`, `key` or `license`, so a model that cannot
+say where its training data came from, or under what terms, cannot be published. `evaluation_report.json` records the evaluated data hash, metrics, latency,
 individual checks, overall gate result, and `passed` or `failed` status.
 Evaluation reconstructs the feature schema and exact stratified held-out split
-from lineage. Promotion validation requires all three gate records and verifies
-their values, thresholds, pass/fail decisions, and overall result for internal
-consistency.
+from lineage. Promotion validation requires all four gate records - accuracy,
+weighted F1, margin over the majority-class baseline, and p95 latency - and
+verifies their values, thresholds, pass/fail decisions, and overall result for
+internal consistency against the metrics in the same report. A bundle cannot
+attest to its own pass.
 
 Training and evaluation build a complete sibling directory and replace the
 candidate only after validation. Registry registration copies and revalidates the
@@ -57,7 +63,20 @@ copies; because the manifest is not cryptographically signed, checksums do not
 make an untrusted bundle safe. Validation checks every byte checksum before any
 joblib artifact is loaded.
 
-## Legacy migration
+## Migration
+
+### From format 1.0
+
+Format 1.1 adds the required `dataset` provenance record to `lineage.json` and a
+fourth required gate check, `accuracy_over_baseline`. A 1.0 bundle is rejected by
+the version check rather than partially accepted. No 1.0 bundle was ever
+published - `models/` is git-ignored - so the migration is simply to retrain:
+
+```bash
+python -m src.pipeline --config configs/train_config.yaml
+```
+
+### From pre-bundle split artifacts
 
 Legacy split artifacts are intentionally not accepted for staging or serving.
 Retrain once with `python -m src.train`, evaluate the generated candidate, and
