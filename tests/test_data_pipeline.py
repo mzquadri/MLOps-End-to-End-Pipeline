@@ -1,190 +1,173 @@
-"""
-Tests for the data pipeline module.
-"""
+"""Tests for text cleaning, content hashing, validation and its failure policy."""
 
+from __future__ import annotations
+
+import json
 import os
-import tempfile
+from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
-# ---------------------------------------------------------------------------
-# Helpers – create a minimal config & sample DataFrame
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_config():
-    return {
-        "data": {
-            "source": "data/reviews.csv",
-            "test_size": 0.2,
-            "random_state": 42,
-            "text_column": "review_text",
-            "label_column": "sentiment",
-            "max_features": 500,
-        },
-        "validation": {
-            "min_accuracy": 0.80,
-            "min_f1": 0.78,
-            "max_drift_psi": 0.25,
-            "max_latency_ms": 200,
-        },
-        "mlflow": {"tracking_uri": "sqlite:///test_mlruns.db"},
-    }
-
-
-@pytest.fixture
-def sample_df():
-    rng = np.random.default_rng(0)
-    n = 200
-    texts = [f"sample review text number {i}" for i in range(n)]
-    sentiments = rng.choice(["positive", "negative"], size=n, p=[0.6, 0.4])
-    return pd.DataFrame(
-        {
-            "review_text": texts,
-            "sentiment": sentiments,
-            "review_length": [len(t) for t in texts],
-            "word_count": [len(t.split()) for t in texts],
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
+from src.data_pipeline import (
+    DataValidationError,
+    DataValidator,
+    add_derived_columns,
+    compute_data_hash,
+    enforce_validation,
+    load_and_preprocess,
+    preprocess_text,
+    save_data_manifest,
+)
 
 
 class TestPreprocessText:
     def test_lowercase(self):
-        from src.data_pipeline import preprocess_text
-
         assert preprocess_text("HELLO WORLD") == "hello world"
 
-    def test_remove_url(self):
-        from src.data_pipeline import preprocess_text
+    def test_removes_url(self):
+        assert "http" not in preprocess_text("Visit http://example.com for info")
 
-        result = preprocess_text("Visit http://example.com for info")
-        assert "http" not in result
+    def test_removes_html(self):
+        assert "<b>" not in preprocess_text("Hello <b>world</b>")
 
-    def test_remove_html(self):
-        from src.data_pipeline import preprocess_text
-
-        result = preprocess_text("Hello <b>world</b>")
-        assert "<b>" not in result
-
-    def test_special_chars(self):
-        from src.data_pipeline import preprocess_text
-
+    def test_drops_punctuation(self):
         result = preprocess_text("great!!! product... #1")
         assert "!" not in result
         assert "#" not in result
 
+    def test_is_stateless(self):
+        """Cleaning must not depend on any other row, or it could leak across a split."""
+        assert preprocess_text("Great Product") == preprocess_text("Great Product")
+
 
 class TestDataHash:
     def test_deterministic(self, sample_df):
-        from src.data_pipeline import compute_data_hash
+        assert compute_data_hash(sample_df) == compute_data_hash(sample_df)
 
-        h1 = compute_data_hash(sample_df)
-        h2 = compute_data_hash(sample_df)
-        assert h1 == h2
-
-    def test_different_for_different_data(self, sample_df):
-        from src.data_pipeline import compute_data_hash
-
-        h1 = compute_data_hash(sample_df)
+    def test_changes_with_content(self, sample_df):
         modified = sample_df.copy()
         modified.iloc[0, 0] = "changed text"
-        h2 = compute_data_hash(modified)
-        assert h1 != h2
+        assert compute_data_hash(sample_df) != compute_data_hash(modified)
 
 
 class TestDataManifest:
-    def test_saves_json(self, sample_df):
-        from src.data_pipeline import compute_data_hash, save_data_manifest
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_hash = compute_data_hash(sample_df)
-            path = save_data_manifest(data_hash, "test.csv", 200, 4, output_dir=tmpdir)
-            assert os.path.exists(path)
-            import json
-
-            with open(path) as f:
-                manifest = json.load(f)
-            assert manifest["data_hash"] == data_hash
-            assert manifest["n_rows"] == 200
+    def test_writes_to_the_requested_directory(self, sample_df, tmp_path):
+        """The manifest goes where the caller says, never into the working tree."""
+        data_hash = compute_data_hash(sample_df)
+        path = save_data_manifest(data_hash, "fixture", 200, 4, output_dir=str(tmp_path))
+        assert os.path.exists(path)
+        assert str(tmp_path) in path
+        manifest = json.loads(Path(path).read_text(encoding="utf-8"))
+        assert manifest["data_hash"] == data_hash
+        assert manifest["n_rows"] == 200
 
 
 class TestDataValidator:
     def test_null_check_passes(self, sample_config, sample_df):
-        from src.data_pipeline import DataValidator
-
-        validator = DataValidator(sample_config)
-        result = validator.check_nulls(sample_df)
-        assert result["passed"] is True
+        assert DataValidator(sample_config).check_nulls(sample_df)["passed"] is True
 
     def test_null_check_fails(self, sample_config):
-        from src.data_pipeline import DataValidator
-
-        df = pd.DataFrame({"a": [None] * 50 + [1] * 50})
-        validator = DataValidator(sample_config)
-        result = validator.check_nulls(df, max_null_pct=0.05)
+        frame = pd.DataFrame({"a": [None] * 50 + [1] * 50})
+        result = DataValidator(sample_config).check_nulls(frame, max_null_pct=0.05)
         assert result["passed"] is False
 
-    def test_duplicate_check(self, sample_config, sample_df):
-        from src.data_pipeline import DataValidator
-
-        validator = DataValidator(sample_config)
-        result = validator.check_duplicates(sample_df)
+    def test_duplicate_check_reports_percentage(self, sample_config, sample_df):
+        result = DataValidator(sample_config).check_duplicates(sample_df)
         assert "duplicate_percentage" in result
 
     def test_class_balance(self, sample_config, sample_df):
-        from src.data_pipeline import DataValidator
+        assert DataValidator(sample_config).check_class_balance(
+            sample_df["sentiment"]
+        )["passed"] is True
 
-        validator = DataValidator(sample_config)
-        result = validator.check_class_balance(sample_df["sentiment"])
-        assert result["passed"] is True
-
-    def test_all_checks_fail_when_a_check_fails(self, sample_config):
-        from src.data_pipeline import DataValidator
-
-        df = pd.DataFrame(
-            {
-                "review_text": [None] * 10,
-                "sentiment": ["positive"] * 10,
-            }
+    def test_overall_fails_when_any_check_fails(self, sample_config):
+        frame = pd.DataFrame(
+            {"review_text": [None] * 10, "sentiment": ["positive"] * 10}
         )
-        result = DataValidator(sample_config).run_all_checks(df, "sentiment")
+        result = DataValidator(sample_config).run_all_checks(frame, "sentiment")
         assert result["overall_passed"] is False
 
-    def test_psi_identical_distributions(self, sample_config):
-        from src.data_pipeline import DataValidator
+    def test_psi_is_zero_for_identical_distributions(self, sample_config):
+        import numpy as np
 
-        validator = DataValidator(sample_config)
-        rng = np.random.default_rng(42)
-        ref = rng.normal(0, 1, 1000)
-        psi = validator.compute_psi(ref, ref)
-        assert psi < 0.01  # nearly zero for identical
+        reference = np.random.default_rng(42).normal(0, 1, 1000)
+        assert DataValidator(sample_config).compute_psi(reference, reference) < 0.01
+
+    def test_psi_is_finite_when_a_bucket_is_empty(self, sample_config):
+        """Laplace smoothing keeps a disjoint comparison from returning infinity."""
+        import numpy as np
+
+        left = np.zeros(100)
+        right = np.ones(100) * 50
+        psi = DataValidator(sample_config).compute_psi(left, right)
+        assert np.isfinite(psi)
 
 
-class TestDemoData:
-    def test_generate_demo_data(self):
-        from src.data_pipeline import _generate_demo_data
+class TestValidationPolicy:
+    """The behaviour that made the original synthetic run look credible."""
 
-        df = _generate_demo_data(500)
-        assert len(df) == 500
-        assert "review_text" in df.columns
-        assert "sentiment" in df.columns
-        assert set(df["sentiment"].unique()) == {"positive", "negative"}
+    def _failing_report(self):
+        return {
+            "overall_passed": False,
+            "null_check": {"passed": True},
+            "duplicate_check": {"passed": False, "duplicate_percentage": 0.99},
+            "class_balance": {"passed": True},
+        }
+
+    def test_error_policy_stops_the_run(self):
+        with pytest.raises(DataValidationError, match="duplicate_check"):
+            enforce_validation(self._failing_report(), "error")
+
+    def test_warn_policy_continues(self):
+        enforce_validation(self._failing_report(), "warn")
+
+    def test_passing_report_is_a_no_op(self):
+        enforce_validation({"overall_passed": True}, "error")
+
+
+class TestDerivedColumns:
+    def test_adds_clean_text_and_length_features(self):
+        frame = pd.DataFrame(
+            {"review_text": ["Great Product!"], "sentiment": ["positive"]}
+        )
+        result = add_derived_columns(frame, "review_text", "sentiment")
+        assert result.loc[0, "review_text_clean"] == "great product"
+        assert result.loc[0, "review_length"] == len("Great Product!")
+        assert result.loc[0, "word_count"] == 2
 
 
 class TestLoadAndPreprocess:
-    def test_runs_with_synthetic_data(self, sample_config):
-        """When source file doesn't exist, it should generate demo data."""
-        from src.data_pipeline import load_and_preprocess
-
-        df, data_hash = load_and_preprocess(sample_config)
-        assert len(df) > 0
-        assert isinstance(data_hash, str)
+    def test_synthetic_path_returns_data_hash_provenance_and_report(self, sample_config):
+        frame, data_hash, provenance, report = load_and_preprocess(sample_config)
+        assert len(frame) > 0
         assert len(data_hash) == 12
+        assert provenance["kind"] == "synthetic-fixture"
+        assert provenance["license"].startswith("Not applicable")
+        assert "overall_passed" in report
+
+    def test_writes_nothing_to_the_working_tree(self, sample_config, tmp_path, monkeypatch):
+        """Loading data is a pure read. It used to drop a manifest into ./data."""
+        monkeypatch.chdir(tmp_path)
+        load_and_preprocess(sample_config)
+        assert not (tmp_path / "data").exists()
+
+    def test_refuses_to_substitute_synthetic_data_when_not_allowed(
+        self, sample_config, tmp_path
+    ):
+        """The reference run must fail loudly rather than degrade silently.
+
+        The cache directory is redirected at tmp_path so the test is hermetic. Pointing
+        it at the real `data/cache` made the result depend on whether the developer had
+        run the pipeline before, which is how a test quietly stops testing anything.
+        """
+        config = dict(sample_config)
+        config["data"] = {
+            **sample_config["data"],
+            "cache_dir": str(tmp_path / "empty-cache"),
+            "allow_synthetic_fallback": False,
+            "prefer_synthetic": False,
+            "allow_download": False,
+        }
+        with pytest.raises(DataValidationError, match="Refusing to fall back"):
+            load_and_preprocess(config)
