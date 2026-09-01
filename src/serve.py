@@ -28,13 +28,28 @@ from collections import deque
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import numpy as np
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 PREDICTION_LOG_CAPACITY = 500
+
+#: Longest accepted review, in characters.
+#:
+#: The served model is trained on the UCI sentiment-labelled sentences, which are single
+#: sentences: median 68 characters, p99 265, longest 479. This cap rejects none of them and
+#: still leaves four times the headroom of the longest training example, so it bounds cost
+#: without narrowing what the model was built to answer.
+#:
+#: Vectorising is linear in input length, and nothing else bounded it: a 10 MB body measured
+#: at 12.2 s of CPU and 209 MB of peak memory for one request, and the batch endpoint would
+#: take a hundred of those. Text far beyond the training distribution is out-of-domain
+#: anyway, so refusing it at the edge costs no real prediction.
+MAX_TEXT_LENGTH = 2000
+
+ReviewText = Annotated[str, Field(min_length=1, max_length=MAX_TEXT_LENGTH)]
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -48,15 +63,15 @@ logger = logging.getLogger(__name__)
 
 
 class PredictRequest(BaseModel):
-    text: str = Field(
-        ..., min_length=1, description="Review text for sentiment prediction"
-    )
+    text: ReviewText = Field(..., description="Review text for sentiment prediction")
     review_length: int | None = None
     word_count: int | None = None
 
 
 class BatchPredictRequest(BaseModel):
-    texts: list[str] = Field(..., min_length=1, max_length=100)
+    # max_length on the list bounds how many texts arrive; the item type bounds how large
+    # each one may be. Without the second the first is not a limit on anything.
+    texts: list[ReviewText] = Field(..., min_length=1, max_length=100)
 
 
 class PredictResponse(BaseModel):

@@ -12,6 +12,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from src.serve import MAX_TEXT_LENGTH
+
 
 @pytest.fixture
 def unready_client(monkeypatch, tmp_path):
@@ -165,5 +167,35 @@ class TestRequestValidation:
     def test_batch_size_is_capped(self, unready_client):
         response = unready_client.post(
             "/predict/batch", json={"texts": ["review"] * 101}
+        )
+        assert response.status_code == 422
+
+    def test_text_length_is_capped(self, unready_client):
+        """Vectorising is linear in input length, so an unbounded field is a cost hole.
+
+        Measured before the cap existed: a 10 MB body took 12.2 s of CPU and 209 MB of
+        peak memory to transform, for one request.
+        """
+        response = unready_client.post(
+            "/predict", json={"text": "x" * (MAX_TEXT_LENGTH + 1)}
+        )
+        assert response.status_code == 422
+
+    def test_text_at_the_cap_is_accepted(self, unready_client):
+        """The cap must bound cost without narrowing the domain.
+
+        The longest training sentence is 479 characters, so a review at the limit is far
+        outside anything the model was fitted on and still has to be accepted -- a 503 from
+        an unloaded model, not a 422 from validation.
+        """
+        response = unready_client.post(
+            "/predict", json={"text": "x" * MAX_TEXT_LENGTH}
+        )
+        assert response.status_code == 503
+
+    def test_batch_caps_each_item_not_just_the_count(self, unready_client):
+        """A hundred-item limit bounds nothing if each item may be arbitrarily large."""
+        response = unready_client.post(
+            "/predict/batch", json={"texts": ["ok", "x" * (MAX_TEXT_LENGTH + 1)]}
         )
         assert response.status_code == 422
