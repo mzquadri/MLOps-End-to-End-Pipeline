@@ -204,12 +204,18 @@ def run(
     registered_manifest = json.loads(
         (Path(registered_path) / MANIFEST_FILE).read_text(encoding="utf-8")
     )
+    try:
+        bundle_path = os.path.relpath(registered_path)
+    except ValueError:
+        # On Windows, relpath raises when the target sits on a different drive
+        # than the working directory. An absolute path is still usable here.
+        bundle_path = registered_path
     summary["registry"] = {
         "registered": True,
         "model_name": model_name,
         "version": version,
         "stage": "production",
-        "bundle_path": os.path.relpath(registered_path).replace("\\", "/"),
+        "bundle_path": bundle_path.replace("\\", "/"),
         "artifact_checksums": registered_manifest["artifact_checksums"],
         "bundle_format_version": registered_manifest["bundle_format_version"],
     }
