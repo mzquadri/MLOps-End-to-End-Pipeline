@@ -5,7 +5,7 @@ data produced which model, refusing to ship one that does not meet the bar, and 
 in a way you can reproduce next year.
 
 This is a small, complete implementation of that lifecycle for a text-classification
-task — data acquisition and validation, leak-free feature fitting, training, held-out
+task, data acquisition and validation, leak-free feature fitting, training, held-out
 evaluation behind a promotion gate, immutable versioned artifacts, a serving API, a
 container, and CI that runs all of it. It is deliberately small enough to read in an
 afternoon.
@@ -68,7 +68,7 @@ The individual stages remain available (`src.train`, `src.evaluate`, `src.model_
 if you want to step through them.
 
 Offline or in a hurry, `configs/ci_config.yaml` runs the same lifecycle on a synthetic
-fixture with no network. Its metrics are meaningless by design — see below.
+fixture with no network. Its metrics are meaningless by design, see below.
 
 ## Results
 
@@ -78,20 +78,33 @@ Reference run, UCI Sentiment Labelled Sentences, 3,000 rows split 1,800 / 600 / 
 | --- | --- | --- |
 | Accuracy | 0.8117 | **0.8067** |
 | Weighted F1 | 0.8114 | **0.8067** |
-| ROC-AUC | — | **0.8795** |
-| PR-AUC | — | **0.8895** |
+| ROC-AUC | n/a | **0.8795** |
+| PR-AUC | n/a | **0.8895** |
 | Majority-class baseline | 0.5000 | **0.5000** |
 | Margin over baseline | 0.3117 | **0.3067** |
 
-Cross-validated weighted F1 on the training split: 0.7915 ± 0.0132. Single-row inference
-latency, in process: p95 0.067 ms.
+Cross-validated weighted F1 on the training split: 0.7915 ± 0.0132.
 
-Read that as an ordinary result for TF-IDF plus logistic regression on short sentences —
-well above the 0.5 baseline, and nowhere near a fine-tuned transformer. The value of this
+Single-row inference latency, in process, p95: 0.067 ms on the machine that produced the
+published run, 0.046 ms on the one that verified it. Latency is a property of the machine
+rather than of the model, which is why the promotion gate allows it 100 ms and the
+reference check does not assert it.
+
+Read that as an ordinary result for TF-IDF plus logistic regression on short sentences, well above the 0.5 baseline, and nowhere near a fine-tuned transformer. The value of this
 repository is the machinery around the number, not the number.
 
 `scripts/check_reference_run.py` asserts this table against an actual run, and CI runs it,
 so the documentation cannot quietly drift away from the code.
+
+![Promotion gate](docs/figures/01_promotion_gate.png)
+
+![Evaluation curves](docs/figures/02_evaluation_curves.png)
+
+![Generalisation](docs/figures/03_generalisation.png)
+
+The three places the metric was measured agree to within 0.020, and the test result sits
+inside the cross-validation spread. On 600 test rows the confidence interval on accuracy
+is roughly three points, so nothing here should be read more precisely than that.
 
 **The synthetic fixture is not evidence.** It is built from ten templates and a linear
 model scores ~1.0 on it. It exists so tests and CI can exercise the lifecycle without a
@@ -117,7 +130,7 @@ python -m src.pipeline --config configs/train_config.yaml   # produce a bundle f
 docker compose up --build api
 ```
 
-The image contains code and config only — no data, no model. A bundle is mounted at run
+The image contains code and config only, no data, no model. A bundle is mounted at run
 time, so promoting a new version does not require a rebuild. It runs as a non-root user,
 and the healthcheck polls `/ready` using the interpreter already in the image rather than
 a `curl` that the slim base does not ship.
@@ -167,7 +180,7 @@ what could fail, how it is tested, and what would change in production.
   difference between models on this split is noise.
 - Metrics are aggregate. The dataset pools Amazon, IMDb and Yelp; per-source performance
   is not reported and would very likely differ.
-- Latency is measured in process on one machine — a regression guard, not a service level
+- Latency is measured in process on one machine, a regression guard, not a service level
   objective.
 - No calibration is reported, because nothing consumes the probabilities as probabilities.
 - Monitoring is a JSON counter endpoint, not a monitoring system.
@@ -198,10 +211,10 @@ reference run downloads UCI *Sentiment Labelled Sentences*, licensed **CC BY 4.0
 requires attribution:
 
 > Kotzias, D. (2015). Sentiment Labelled Sentences [Dataset]. UCI Machine Learning
-> Repository. https://doi.org/10.24432/C57604 — licensed under
+> Repository. https://doi.org/10.24432/C57604, licensed under
 > [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## Author
 
-**Mohd Zamin Quadri** — [GitHub](https://github.com/mzquadri) ·
+**Mohd Zamin Quadri**, [GitHub](https://github.com/mzquadri) ·
 [LinkedIn](https://www.linkedin.com/in/mohdzaminquadri/)
