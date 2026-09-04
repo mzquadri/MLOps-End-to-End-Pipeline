@@ -17,8 +17,8 @@
 
 ### Required attribution
 
-The dataset is CC BY 4.0, which obliges attribution. Anything derived from it — a model,
-a chart, a blog post — carries that obligation:
+The dataset is CC BY 4.0, which obliges attribution. Anything derived from it, a model,
+a chart, a blog post, carries that obligation:
 
 > Kotzias, D. (2015). Sentiment Labelled Sentences [Dataset]. UCI Machine Learning
 > Repository. https://doi.org/10.24432/C57604
@@ -80,7 +80,7 @@ its data came from, or under what terms, cannot be published by this pipeline.
 }
 ```
 
-The record contains no local paths — for user-supplied CSVs, only the file name and row
+The record contains no local paths, for user-supplied CSVs, only the file name and row
 count are recorded, never the directory it came from.
 
 ## The synthetic fixture
@@ -89,7 +89,7 @@ count are recorded, never the directory it came from.
 and CI can exercise the full lifecycle in about a second with no network.
 
 **It is not evidence.** It is built from ten templates, so a linear model reaches near
-perfect accuracy on it — a property of the fixture, not of the model. Its provenance
+perfect accuracy on it, a property of the fixture, not of the model. Its provenance
 record says so explicitly, and `configs/ci_config.yaml` repeats the warning.
 
 This distinction is the whole reason the reference run changed. The previous version of
@@ -101,8 +101,8 @@ F1 1.0000 and CV 1.0 ± 0.0 on rows that were 99% duplicates.
 | Feature | Source | Leakage risk |
 | --- | --- | --- |
 | TF-IDF, 1–2 grams, `min_df=2`, max 10,000 | cleaned text, fitted on train only | Would leak if fitted on the full frame; see `docs/ARCHITECTURE.md` decision 2 |
-| `review_length` | `len(text)` of that row | None — computed per row from its own text |
-| `word_count` | token count of that row | None — same |
+| `review_length` | `len(text)` of that row | None, computed per row from its own text |
+| `word_count` | token count of that row | None, same |
 
 The reference run produces 3,463 features: 3,461 TF-IDF terms plus the two length
 features.

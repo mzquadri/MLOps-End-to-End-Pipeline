@@ -39,8 +39,8 @@ split until a model passes.
 | p95 / p99 latency | Serving-cost regression guard |
 
 Calibration is **not** reported. Nothing downstream consumes the probabilities as
-probabilities — the service returns a label with a confidence for display, and no
-decision threshold is tuned — so a calibration curve would be a metric in search of a
+probabilities, the service returns a label with a confidence for display, and no
+decision threshold is tuned, so a calibration curve would be a metric in search of a
 purpose. If a business rule ever routes on a probability, this is the first thing to add.
 
 ROC and PR curve points are written to `results/evaluation_curves.json`. They are useful
@@ -52,12 +52,12 @@ Produced by `python -m src.pipeline --config configs/train_config.yaml`:
 
 | | Train (CV) | Validation | Test |
 | --- | --- | --- | --- |
-| Accuracy | — | 0.8117 | **0.8067** |
+| Accuracy |, | 0.8117 | **0.8067** |
 | Weighted F1 | 0.7915 ± 0.0132 | 0.8114 | **0.8067** |
-| ROC-AUC | — | — | **0.8795** |
-| PR-AUC | — | — | **0.8895** |
-| Majority baseline accuracy | — | 0.5000 | **0.5000** |
-| Margin over baseline | — | 0.3117 | **0.3067** |
+| ROC-AUC | n/a |, | **0.8795** |
+| PR-AUC | n/a |, | **0.8895** |
+| Majority baseline accuracy |, | 0.5000 | **0.5000** |
+| Margin over baseline |, | 0.3117 | **0.3067** |
 
 Confusion matrix on the 600 test rows (rows = actual, columns = predicted, label order
 `[negative, positive]`):
@@ -69,7 +69,7 @@ actual pos        57       243
 ```
 
 Latency, single row, in process: mean 0.062 ms, p95 0.067 ms, p99 0.076 ms. This is a
-regression guard measured on one machine, not a service level objective — a real latency
+regression guard measured on one machine, not a service level objective, a real latency
 budget is measured at the service boundary under concurrency.
 
 `scripts/check_reference_run.py` asserts these numbers against a produced run, so the
@@ -96,7 +96,7 @@ The current values are derived as follows:
    is worthless.
 2. Observed **validation** accuracy is **0.8117**. Validation is the split that exists
    for exactly this kind of decision.
-3. The gate is set at **0.75** — comfortably above baseline, and roughly six points
+3. The gate is set at **0.75**, comfortably above baseline, and roughly six points
    below the observed validation score to absorb split noise and small dependency
    changes without becoming a rubber stamp.
 4. `min_accuracy_over_baseline` is set at **0.20**, so the gate keeps its meaning if the
@@ -107,7 +107,7 @@ The current values are derived as follows:
 a hyperparameter. If it had been, the number would be an estimate of nothing.
 
 A threshold below the current model's score is a floor, not a target. It answers "is this
-model good enough to ship", not "is this the best model" — the second question belongs to
+model good enough to ship", not "is this the best model", the second question belongs to
 a champion/challenger comparison, which needs an incumbent and is listed as future work
 in `docs/PRODUCTION.md`.
 

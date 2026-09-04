@@ -28,7 +28,7 @@ monitoring.
 
 **Ground truth is the hard part.** None of the above measures accuracy, because accuracy
 needs labels and labels arrive later, if at all. A real deployment would need a labelling
-path — delayed feedback, sampled human review, or a downstream signal — before it could
+path, delayed feedback, sampled human review, or a downstream signal, before it could
 claim to monitor model quality rather than model behaviour.
 
 **Why none of it is implemented here.** Emitting metrics nobody scrapes, into a

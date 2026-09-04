@@ -93,7 +93,7 @@ asked about in an interview, and the ones most likely to be got wrong.
 2. **Why it exists** `validation.data.on_failure: error` stops the run.
 3. **Alternatives** Always fail; always warn; a separate manual data-review step.
 4. **Why this one** Exploratory work legitimately needs to look at bad data, so the
-   policy is configurable — but the *reference* configuration is strict, and the loose
+   policy is configurable, but the *reference* configuration is strict, and the loose
    setting has to be chosen deliberately and is visible in version control.
 5. **What could fail** A threshold set so loose it never fires. The CI config relaxes
    the duplicate ceiling for the template fixture and says so in a comment; the
