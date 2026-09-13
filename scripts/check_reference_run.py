@@ -42,7 +42,7 @@ EXPECTED = {
         "baseline_accuracy": 0.5000,
         "accuracy_over_baseline": 0.3067,
     },
-    "bundle_format_version": "1.1",
+    "bundle_format_version": "1.2",
 }
 
 

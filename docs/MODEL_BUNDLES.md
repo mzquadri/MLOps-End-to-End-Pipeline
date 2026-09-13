@@ -13,7 +13,7 @@ trained against.
 The bundle makes model, preprocessing, metrics, lineage, evaluation, and their
 integrity metadata one promotion unit.
 
-## Format 1.1
+## Format 1.2
 
 `manifest.json` is deterministic, sorted JSON with:
 
@@ -24,8 +24,24 @@ integrity metadata one promotion unit.
 
 `lineage.json` contains safe aggregate provenance only: data content hash, row
 counts, split seed/fractions, feature column names, experiment, model type, the
-outcome of the input-data validation, and the dataset provenance record. It must
-not contain raw records, credentials, environment variables, or absolute paths.
+outcome of the input-data validation, the dataset provenance record, and the
+runtime provenance record. It must not contain raw records, credentials,
+environment variables, or absolute paths.
+
+The runtime record answers "what built this": the interpreter version, the
+versions of scikit-learn, numpy, scipy, joblib and pandas, and the source commit.
+scikit-learn is the one that matters most in practice, because a joblib artifact
+pickled by one version and loaded by another is the failure this record exists to
+make diagnosable.
+
+It carries no timestamp, deliberately. `lineage.json` is byte-identical across two
+runs of the same commit on the same machine, which is worth keeping, and the
+creation time is already recorded by the registry index and the run summary.
+
+`source_commit` is read from `SOURCE_COMMIT`, `GIT_COMMIT` or `GITHUB_SHA` first,
+then from `git rev-parse HEAD`. The image excludes `.git`, so a container build
+has nothing to read and must pass one of those variables; when none is available
+the value is recorded as `unknown` rather than guessed.
 
 The dataset record is required. Validation rejects a lineage whose `dataset` is
 missing or lacks a non-empty `kind`, `key` or `license`, so a model that cannot
@@ -64,6 +80,12 @@ make an untrusted bundle safe. Validation checks every byte checksum before any
 joblib artifact is loaded.
 
 ## Migration
+
+### From format 1.1
+
+Format 1.2 adds the required `runtime` provenance record to `lineage.json`. A 1.1
+bundle is rejected by the version check rather than partially accepted, and as
+before nothing was ever published from `models/`, so the migration is to retrain.
 
 ### From format 1.0
 

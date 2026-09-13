@@ -36,6 +36,7 @@ from src.model_bundle import (
     create_candidate_bundle,
     load_trusted_bundle,
     read_bundle_json,
+    runtime_provenance,
     update_evaluation_report,
 )
 from src.model_registry import LocalModelRegistry
@@ -109,6 +110,7 @@ def run(
             "text_column": store.text_column,
         },
         "model_type": config["model"]["type"],
+        "runtime": runtime_provenance(),
         "split": {
             "random_state": seed,
             "stratified": True,

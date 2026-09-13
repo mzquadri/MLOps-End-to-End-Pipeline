@@ -12,7 +12,9 @@ import hashlib
 import json
 import math
 import os
+import platform
 import shutil
+import subprocess
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -20,7 +22,7 @@ from typing import Any
 
 import joblib
 
-BUNDLE_FORMAT_VERSION = "1.1"
+BUNDLE_FORMAT_VERSION = "1.2"
 MODEL_FILE = "model.joblib"
 TRANSFORMERS_FILE = "feature_transformers.joblib"
 TRAINING_METRICS_FILE = "training_metrics.json"
@@ -43,6 +45,65 @@ REQUIRED_GATE_CHECKS = {
     "accuracy_over_baseline": ("metrics", "accuracy_over_baseline", "minimum"),
     "latency_p95": ("latency", "p95_latency_ms", "maximum"),
 }
+
+
+#: Packages whose version changes the artifact or how it loads. scikit-learn first,
+#: because a joblib artifact pickled by one version and unpickled by another is the
+#: failure this record exists to make diagnosable.
+PROVENANCE_PACKAGES = ("scikit-learn", "numpy", "scipy", "joblib", "pandas")
+
+#: Environment variables a build can use to state the commit. The image excludes .git,
+#: so inside a container there is nothing for `git rev-parse` to read; CI sets GITHUB_SHA.
+COMMIT_ENVIRONMENT_VARIABLES = ("SOURCE_COMMIT", "GIT_COMMIT", "GITHUB_SHA")
+
+UNKNOWN_COMMIT = "unknown"
+
+
+def source_commit() -> str:
+    """The commit that produced this bundle, or "unknown" when it cannot be determined.
+
+    "unknown" is a real answer and is recorded as one. A bundle built from a tarball or
+    inside an image without .git genuinely cannot know its commit, and writing a
+    plausible-looking value would be worse than admitting it.
+    """
+    for name in COMMIT_ENVIRONMENT_VARIABLES:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return UNKNOWN_COMMIT
+    revision = completed.stdout.strip()
+    return revision if completed.returncode == 0 and revision else UNKNOWN_COMMIT
+
+
+def runtime_provenance() -> dict[str, Any]:
+    """What produced this bundle: the interpreter, the packages, and the commit.
+
+    Deliberately carries no timestamp. lineage.json is byte-identical across two runs of
+    the same commit on the same machine, which is a property worth keeping; the creation
+    time is already recorded by the registry and by the run summary, so putting it here
+    would cost that property and add nothing.
+    """
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as package_version
+
+    packages: dict[str, str] = {}
+    for name in PROVENANCE_PACKAGES:
+        try:
+            packages[name] = package_version(name)
+        except PackageNotFoundError:
+            packages[name] = UNKNOWN_COMMIT
+    return {
+        "python": platform.python_version(),
+        "packages": packages,
+        "source_commit": source_commit(),
+    }
 
 
 class BundleIntegrityError(RuntimeError):
@@ -143,6 +204,25 @@ def _validate_lineage(lineage: Any) -> None:
         if not isinstance(dataset.get(field_name), str) or not dataset[field_name]:
             raise BundleIntegrityError(
                 f"Dataset provenance requires a non-empty {field_name}"
+            )
+
+    # Format 1.2. Without this a deployed .joblib cannot be traced to the code or the
+    # scikit-learn that produced it, which is the difference between an artifact and an
+    # unidentified file that happens to load.
+    runtime = lineage.get("runtime")
+    if not isinstance(runtime, dict):
+        raise BundleIntegrityError("Bundle lineage requires a runtime provenance record")
+    if not isinstance(runtime.get("python"), str) or not runtime["python"]:
+        raise BundleIntegrityError("Runtime provenance requires a python version")
+    if not isinstance(runtime.get("source_commit"), str) or not runtime["source_commit"]:
+        raise BundleIntegrityError("Runtime provenance requires a source_commit")
+    packages = runtime.get("packages")
+    if not isinstance(packages, dict) or not packages:
+        raise BundleIntegrityError("Runtime provenance requires recorded package versions")
+    for name in PROVENANCE_PACKAGES:
+        if not isinstance(packages.get(name), str) or not packages[name]:
+            raise BundleIntegrityError(
+                f"Runtime provenance is missing the version of {name}"
             )
 
     split = lineage.get("split")

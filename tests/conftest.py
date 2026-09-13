@@ -12,6 +12,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from src.model_bundle import runtime_provenance
+
 DATASET_PROVENANCE = {
     "kind": "synthetic-fixture",
     "key": "test-fixture",
@@ -39,6 +41,9 @@ def make_lineage(
             "numeric_columns": numeric_columns if numeric_columns is not None else [],
             "text_column": "review_text",
         },
+        # Real provenance rather than a literal, so these fixtures exercise the same
+        # function the pipeline uses and cannot drift from it.
+        "runtime": runtime_provenance(),
         "split": {
             "random_state": random_state,
             "stratified": True,

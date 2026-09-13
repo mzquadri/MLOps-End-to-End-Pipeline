@@ -197,7 +197,7 @@ none of it is faked here.
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Module boundaries and the six design decisions |
 | [DATA.md](docs/DATA.md) | Dataset provenance, licensing, attribution, the fixture policy |
 | [EVALUATION.md](docs/EVALUATION.md) | Split methodology, metrics, how the gate thresholds were derived |
-| [MODEL_BUNDLES.md](docs/MODEL_BUNDLES.md) | Bundle format 1.1, promotion rules, trust boundary |
+| [MODEL_BUNDLES.md](docs/MODEL_BUNDLES.md) | Bundle format 1.2, promotion rules, trust boundary |
 | [TESTING.md](docs/TESTING.md) | Test layers and the bugs each one exists because of |
 | [PRODUCTION.md](docs/PRODUCTION.md) | Monitoring, serving and training gaps, stated plainly |
 
