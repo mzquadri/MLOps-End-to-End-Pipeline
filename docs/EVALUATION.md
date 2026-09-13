@@ -24,6 +24,34 @@ candidate's `lineage.json` and reconstructs the identical partition, then refuse
 continue if the data hash or the test row count disagrees. An operator cannot re-roll the
 split until a model passes.
 
+## Repeated texts across splits
+
+The split partitions by index and the three parts are disjoint, which
+`test_three_splits_are_disjoint_and_sized_as_configured` asserts. That is not the same as
+every *text* appearing once. The UCI corpus contains 18 exact duplicate rows in 3,000, and
+stratified sampling has no reason to keep copies in the same part, so a sentence can be
+trained on and then scored.
+
+Measured on the reference configuration:
+
+| Split | Rows repeating a training text | Accuracy with | Accuracy without | Difference |
+| --- | --- | --- | --- | --- |
+| Test | 2 of 600 (0.33%) | 0.8067 | 0.8060 | 0.0006 |
+| Validation | 7 of 600 (1.17%) | 0.8117 | 0.8094 | 0.0022 |
+
+Every repeated row is predicted correctly, which is what makes them mildly flattering.
+Validation carries more of it than test, and validation is the split the gate thresholds
+were derived from, so that is the number worth stating: the gate sits at 0.75 against an
+observed 0.8117 that is inflated by 0.0022.
+
+Both effects are an order of magnitude inside the roughly +/-3 point interval of a 600-row
+split, and neither comes close to explaining the 0.31 margin over the majority-class
+baseline. The duplicates are therefore documented rather than removed: deduplicating would
+change a published number to correct a rounding-level effect, and the measurement is the
+more useful artifact. `tests/test_split_contamination.py` fails if it grows, and also
+fails if a repeated text ever carries two different labels, which would be a labelling
+fault rather than a duplication one.
+
 ## Metrics
 
 | Metric | Why it is here |

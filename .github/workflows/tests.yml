@@ -27,7 +27,7 @@ jobs:
 
       - name: Unit and integration tests
         # No network and no Docker: this job must pass on any runner, every time.
-        run: pytest -m "not docker" --durations=10
+        run: pytest -m "not docker and not network" --durations=10
 
   reference-run:
     name: Reference run on licensed data
@@ -58,6 +58,13 @@ jobs:
 
       - name: Check the published result against the documented one
         run: python scripts/check_reference_run.py
+
+      # The only job with the licensed dataset, so the only place the split can be
+      # measured against it. These assert that repeated source texts spanning two splits
+      # stay negligible; they were 2 of 600 test rows and 7 of 600 validation rows when
+      # measured, worth 0.0006 and 0.0022 of accuracy respectively.
+      - name: Split contamination stays within the measured bound
+        run: pip install -r requirements-dev.txt && pytest -m network
 
       - name: Upload the run summary
         if: always()

@@ -116,7 +116,8 @@ network. Nothing quoted as a result comes from it.
 pip install -r requirements-dev.txt
 
 ruff check .
-pytest -m "not docker"                     # 93 tests, ~13s
+pytest -m "not docker and not network"     # 153 tests, ~14s, no network, no daemon
+pytest -m network                          # 5 tests, downloads the licensed dataset
 pytest tests/test_docker.py -m docker      # 6 tests, needs a Docker daemon
 ```
 
