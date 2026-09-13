@@ -173,6 +173,27 @@ what could fail, how it is tested, and what would change in production.
 6. **The reference run uses real, licensed data.** Downloaded and checksum-verified, never
    redistributed.
 
+## Hardware
+
+No GPU, and the reason is measured rather than assumed.
+
+| | |
+| --- | --- |
+| Feature matrix | 1,800 x 3,463, sparse, 27,439 non-zeros, 0.44% dense, 214 KB |
+| Model | 3,464 parameters, one coefficient per feature plus an intercept |
+| Full training | 22.5 ms, median of ten fits |
+| Inference | 0.053 ms per row, p95, in process |
+
+A 214 KB sparse matrix and a 22 ms fit. Moving that to an accelerator costs more in
+transfer and dispatch than the arithmetic it would replace, and TF-IDF plus a linear
+classifier has no dense kernel worth offloading. The repository also declares no
+GPU-capable backend: scikit-learn ships none, and `sklearnex`, `daal4py` and `cuml` are
+not dependencies here.
+
+This project is CPU-only by design, not by omission. The right place for an accelerator in
+a pipeline shaped like this one would be a transformer-based feature extractor, which is a
+different project.
+
 ## Limitations
 
 - A reference implementation, not a deployed product. No production traffic has ever hit
