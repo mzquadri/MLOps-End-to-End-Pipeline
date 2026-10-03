@@ -1,6 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 720" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="End-to-end MLOps lifecycle: data acquisition, validation, splitting, feature fitting, training, bundling, evaluation, promotion gate, registry and serving">
   <title>End-to-end MLOps lifecycle</title>
-  <rect width="980" height="720" fill="#ffffff"/>
 
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">

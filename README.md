@@ -10,7 +10,11 @@ evaluation behind a promotion gate, immutable versioned artifacts, a serving API
 container, and CI that runs all of it. It is deliberately small enough to read in an
 afternoon.
 
-[![Lifecycle](docs/diagrams/pipeline.svg)](docs/diagrams/pipeline.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/pipeline-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/diagrams/pipeline.svg">
+  <img src="docs/diagrams/pipeline.svg" alt="End-to-end MLOps lifecycle: acquire, validate, split, features, train, bundle, evaluate, gate, register, serve">
+</picture>
 
 ## Why it was built
 
@@ -96,11 +100,23 @@ repository is the machinery around the number, not the number.
 `scripts/check_reference_run.py` asserts this table against an actual run, and CI runs it,
 so the documentation cannot quietly drift away from the code.
 
-![Promotion gate](docs/figures/01_promotion_gate.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/01_promotion_gate-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/figures/01_promotion_gate.png">
+  <img src="docs/figures/01_promotion_gate.png" alt="Promotion gate: every check against its threshold">
+</picture>
 
-![Evaluation curves](docs/figures/02_evaluation_curves.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/02_evaluation_curves-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/figures/02_evaluation_curves.png">
+  <img src="docs/figures/02_evaluation_curves.png" alt="ROC and precision-recall curves on the held-out split">
+</picture>
 
-![Generalisation](docs/figures/03_generalisation.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/figures/03_generalisation-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/figures/03_generalisation.png">
+  <img src="docs/figures/03_generalisation.png" alt="Cross-validation, validation and test accuracy side by side">
+</picture>
 
 The three places the metric was measured agree to within 0.020, and the test result sits
 inside the cross-validation spread. On 600 test rows the confidence interval on accuracy

@@ -23,26 +23,79 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
-#: A restrained palette. One blue for "what is", one amber for "what the policy
-#: does", one red for "what moves", greys for everything structural.
-INK = "#111827"
-BODY = "#374151"
-MUTED = "#6B7280"
-FAINT = "#9CA3AF"
-HAIR = "#E5E7EB"
-PAPER = "#FFFFFF"
-WASH = "#F9FAFB"
+#: A restrained palette per theme. One blue for "what is", one amber for "what
+#: the policy does", one red for "what moves", greys for everything structural.
+#: `apply(theme)` rebinds the bare names below to the chosen palette, so a
+#: figure-drawing function never has to know which theme it is running under --
+#: it just reads `ps.INK`, `ps.BLUE`, and so on, same as before.
+PALETTES = {
+    "light": {
+        "INK": "#111827",
+        "BODY": "#374151",
+        "MUTED": "#6B7280",
+        "FAINT": "#9CA3AF",
+        "HAIR": "#E5E7EB",
+        "PAPER": "#FFFFFF",
+        "WASH": "#F9FAFB",
+        "BLUE": "#2563EB",
+        "BLUE_SOFT": "#93C5FD",
+        "AMBER": "#D97706",
+        "AMBER_SOFT": "#FCD34D",
+        "RED": "#DC2626",
+        "RED_SOFT": "#FCA5A5",
+        "GREEN": "#059669",
+        "GREEN_SOFT": "#6EE7B7",
+        "PURPLE": "#7C3AED",
+        "PURPLE_SOFT": "#C4B5FD",
+    },
+    "dark": {
+        "INK": "#E6EDF3",
+        "BODY": "#C9D1D9",
+        "MUTED": "#9BA7B4",
+        "FAINT": "#6E7681",
+        "HAIR": "#30363D",
+        "PAPER": "none",
+        "WASH": "#161B22",
+        "BLUE": "#58A6FF",
+        "BLUE_SOFT": "#1F3B57",
+        "AMBER": "#D29922",
+        "AMBER_SOFT": "#3A2E10",
+        "RED": "#F85149",
+        "RED_SOFT": "#3D1F1E",
+        "GREEN": "#3FB950",
+        "GREEN_SOFT": "#1B3A2A",
+        "PURPLE": "#A78BFA",
+        "PURPLE_SOFT": "#2E2250",
+    },
+}
 
-BLUE = "#2563EB"
-BLUE_SOFT = "#93C5FD"
-AMBER = "#D97706"
-AMBER_SOFT = "#FCD34D"
-RED = "#DC2626"
-RED_SOFT = "#FCA5A5"
-GREEN = "#059669"
-GREEN_SOFT = "#6EE7B7"
-PURPLE = "#7C3AED"
-PURPLE_SOFT = "#C4B5FD"
+#: Bound here so every name below exists before `apply()` is first called;
+#: `apply()` reassigns them, it does not introduce them.
+INK = PALETTES["light"]["INK"]
+BODY = PALETTES["light"]["BODY"]
+MUTED = PALETTES["light"]["MUTED"]
+FAINT = PALETTES["light"]["FAINT"]
+HAIR = PALETTES["light"]["HAIR"]
+PAPER = PALETTES["light"]["PAPER"]
+WASH = PALETTES["light"]["WASH"]
+BLUE = PALETTES["light"]["BLUE"]
+BLUE_SOFT = PALETTES["light"]["BLUE_SOFT"]
+AMBER = PALETTES["light"]["AMBER"]
+AMBER_SOFT = PALETTES["light"]["AMBER_SOFT"]
+RED = PALETTES["light"]["RED"]
+RED_SOFT = PALETTES["light"]["RED_SOFT"]
+GREEN = PALETTES["light"]["GREEN"]
+GREEN_SOFT = PALETTES["light"]["GREEN_SOFT"]
+PURPLE = PALETTES["light"]["PURPLE"]
+PURPLE_SOFT = PALETTES["light"]["PURPLE_SOFT"]
+
+_THEME = "light"
+
+
+def theme_suffix() -> str:
+    """`""` for light, `"-dark"` for dark -- for a caller's own save-filename."""
+    return "" if _THEME == "light" else "-dark"
+
 
 #: Sequential ramps built for dark map backgrounds: they start near the
 #: background so quiet links recede, and end bright so busy ones carry.
@@ -66,31 +119,37 @@ HEAT_LIGHT = LinearSegmentedColormap.from_list(
 FAMILY = ["Segoe UI", "Corbel", "DejaVu Sans"]
 
 
-def apply():
-    """Global rcParams. Called once per script."""
+def apply(theme: str = "light"):
+    """Global rcParams, and rebind every colour name above to `theme`."""
+    global _THEME
+    _THEME = theme
+    p = PALETTES[theme]
+    globals().update(p)
+
     plt.rcParams.update(
         {
-            "figure.facecolor": PAPER,
-            "axes.facecolor": PAPER,
-            "savefig.facecolor": PAPER,
+            "figure.facecolor": p["PAPER"],
+            "axes.facecolor": "none",
+            "savefig.facecolor": p["PAPER"],
+            "savefig.transparent": theme == "dark",
             "savefig.dpi": 200,
             "figure.dpi": 120,
             "savefig.bbox": "tight",
             "savefig.pad_inches": 0.35,
             "font.family": "sans-serif",
             "font.sans-serif": FAMILY,
-            "text.color": BODY,
-            "axes.edgecolor": HAIR,
-            "axes.labelcolor": MUTED,
-            "axes.titlecolor": INK,
+            "text.color": p["BODY"],
+            "axes.edgecolor": p["HAIR"],
+            "axes.labelcolor": p["MUTED"],
+            "axes.titlecolor": p["INK"],
             "axes.linewidth": 0.9,
             "axes.grid": False,
             "axes.spines.top": False,
             "axes.spines.right": False,
-            "xtick.color": FAINT,
-            "ytick.color": FAINT,
-            "xtick.labelcolor": MUTED,
-            "ytick.labelcolor": MUTED,
+            "xtick.color": p["FAINT"],
+            "ytick.color": p["FAINT"],
+            "xtick.labelcolor": p["MUTED"],
+            "ytick.labelcolor": p["MUTED"],
             "xtick.direction": "out",
             "ytick.direction": "out",
             "xtick.major.size": 0,

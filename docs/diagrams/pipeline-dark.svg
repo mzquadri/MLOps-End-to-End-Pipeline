@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 720" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-label="End-to-end MLOps lifecycle: data acquisition, validation, splitting, feature fitting, training, bundling, evaluation, promotion gate, registry and serving">
+  <title>End-to-end MLOps lifecycle</title>
+
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#C9D1D9"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#F85149"/>
+    </marker>
+  </defs>
+
+  <text x="490" y="36" text-anchor="middle" font-size="21" font-weight="600" fill="#E6EDF3">End-to-end MLOps lifecycle</text>
+  <text x="490" y="58" text-anchor="middle" font-size="13" fill="#8B949E">Every box below exists in this repository. Nothing is aspirational.</text>
+
+  <!-- Row 1 -->
+  <rect x="40" y="86" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="60" y="110" font-size="11" font-weight="700" fill="#58A6FF">1 · ACQUIRE</text>
+  <text x="60" y="132" font-size="14" font-weight="600" fill="#E6EDF3">Dataset + provenance</text>
+  <text x="60" y="152" font-size="11" fill="#9BA7B4">UCI Sentiment Labelled Sentences</text>
+  <text x="60" y="168" font-size="11" fill="#9BA7B4">CC BY 4.0 · SHA-256 pinned · cached</text>
+  <text x="60" y="182" font-size="11" fill="#8B949E">synthetic fixture for CI only</text>
+
+  <line x1="290" y1="138" x2="336" y2="138" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="86" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="370" y="110" font-size="11" font-weight="700" fill="#58A6FF">2 · VALIDATE</text>
+  <text x="370" y="132" font-size="14" font-weight="600" fill="#E6EDF3">Quality checks that block</text>
+  <text x="370" y="152" font-size="11" fill="#9BA7B4">nulls · duplicates · class balance</text>
+  <text x="370" y="168" font-size="11" fill="#9BA7B4">drift: KS + PSI · on_failure: error</text>
+  <text x="370" y="182" font-size="11" fill="#8B949E">SHA-256 content hash per version</text>
+
+  <line x1="600" y1="138" x2="646" y2="138" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="660" y="86" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="680" y="110" font-size="11" font-weight="700" fill="#58A6FF">3 · SPLIT</text>
+  <text x="680" y="132" font-size="14" font-weight="600" fill="#E6EDF3">Train / validation / test</text>
+  <text x="680" y="152" font-size="11" fill="#9BA7B4">1800 / 600 / 600 · stratified</text>
+  <text x="680" y="168" font-size="11" fill="#9BA7B4">one seed derives both splits</text>
+  <text x="680" y="182" font-size="11" fill="#8B949E">test is opened once, in step 7</text>
+
+  <path d="M910,190 L910,214 L165,214 L165,228" fill="none" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Row 2 -->
+  <rect x="40" y="232" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="60" y="256" font-size="11" font-weight="700" fill="#58A6FF">4 · FEATURES</text>
+  <text x="60" y="278" font-size="14" font-weight="600" fill="#E6EDF3">Fit on train only</text>
+  <text x="60" y="298" font-size="11" fill="#9BA7B4">TF-IDF (1,2-gram) + StandardScaler</text>
+  <text x="60" y="314" font-size="11" fill="#9BA7B4">fit_transform_train is the only fit</text>
+  <text x="60" y="328" font-size="11" fill="#8B949E">everything else is transform-only</text>
+
+  <line x1="290" y1="284" x2="336" y2="284" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="232" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="370" y="256" font-size="11" font-weight="700" fill="#58A6FF">5 · TRAIN</text>
+  <text x="370" y="278" font-size="14" font-weight="600" fill="#E6EDF3">Fit and score on validation</text>
+  <text x="370" y="298" font-size="11" fill="#9BA7B4">stratified k-fold CV on train</text>
+  <text x="370" y="314" font-size="11" fill="#9BA7B4">validation metrics + majority baseline</text>
+  <text x="370" y="328" font-size="11" fill="#8B949E">optional MLflow logging</text>
+
+  <line x1="600" y1="284" x2="646" y2="284" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="660" y="232" width="250" height="104" rx="10" fill="#0D2847" stroke="#58A6FF" stroke-width="1.8"/>
+  <text x="680" y="256" font-size="11" font-weight="700" fill="#79C0FF">6 · BUNDLE</text>
+  <text x="680" y="278" font-size="14" font-weight="600" fill="#E6EDF3">Atomic candidate bundle</text>
+  <text x="680" y="298" font-size="11" fill="#9BA7B4">model + transformers + metrics</text>
+  <text x="680" y="314" font-size="11" fill="#9BA7B4">lineage + manifest · SHA-256 each</text>
+  <text x="680" y="328" font-size="11" fill="#8B949E">written whole or not at all</text>
+
+  <path d="M910,336 L910,360 L165,360 L165,374" fill="none" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Row 3 -->
+  <rect x="40" y="378" width="250" height="104" rx="10" fill="#161B22" stroke="#6E7681" stroke-width="1.5"/>
+  <text x="60" y="402" font-size="11" font-weight="700" fill="#58A6FF">7 · EVALUATE</text>
+  <text x="60" y="424" font-size="14" font-weight="600" fill="#E6EDF3">Held-out test, once</text>
+  <text x="60" y="444" font-size="11" fill="#9BA7B4">reconstructs the recorded split</text>
+  <text x="60" y="460" font-size="11" fill="#9BA7B4">accuracy · F1 · ROC-AUC · PR-AUC</text>
+  <text x="60" y="474" font-size="11" fill="#8B949E">confusion matrix · p95 latency</text>
+
+  <line x1="290" y1="430" x2="336" y2="430" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <rect x="350" y="378" width="250" height="104" rx="10" fill="#2D2410" stroke="#D29922" stroke-width="1.8"/>
+  <text x="370" y="402" font-size="11" font-weight="700" fill="#E3B341">8 · GATE</text>
+  <text x="370" y="424" font-size="14" font-weight="600" fill="#E6EDF3">Promotion gate</text>
+  <text x="370" y="444" font-size="11" fill="#9BA7B4">accuracy · weighted F1 · p95 latency</text>
+  <text x="370" y="460" font-size="11" fill="#9BA7B4">margin over majority baseline</text>
+  <text x="370" y="474" font-size="11" fill="#8B949E">thresholds from config, not argv</text>
+
+  <line x1="600" y1="430" x2="646" y2="430" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="623" y="422" text-anchor="middle" font-size="10" font-weight="700" fill="#3FB950">pass</text>
+
+  <path d="M475,482 L475,512" fill="none" stroke="#F85149" stroke-width="1.8" marker-end="url(#arrowRed)"/>
+  <text x="487" y="502" font-size="10" font-weight="700" fill="#F85149">fail</text>
+  <rect x="350" y="514" width="250" height="44" rx="8" fill="#3D1F1E" stroke="#F85149" stroke-width="1.5"/>
+  <text x="475" y="536" text-anchor="middle" font-size="12" font-weight="600" fill="#FF7B72">Not registered · exit code 1</text>
+  <text x="475" y="551" text-anchor="middle" font-size="10" fill="#F85149">failure recorded on the candidate</text>
+
+  <rect x="660" y="378" width="250" height="104" rx="10" fill="#0D2818" stroke="#3FB950" stroke-width="1.8"/>
+  <text x="680" y="402" font-size="11" font-weight="700" fill="#56D364">9 · REGISTER</text>
+  <text x="680" y="424" font-size="14" font-weight="600" fill="#E6EDF3">Immutable versions</text>
+  <text x="680" y="444" font-size="11" fill="#9BA7B4">whole-bundle copy · checksums re-checked</text>
+  <text x="680" y="460" font-size="11" fill="#9BA7B4">staging → production only</text>
+  <text x="680" y="474" font-size="11" fill="#8B949E">previous production auto-archived</text>
+
+  <path d="M785,482 L785,566 L490,566 L490,588" fill="none" stroke="#C9D1D9" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Serving -->
+  <rect x="140" y="592" width="700" height="62" rx="10" fill="#161B22" stroke="#C9D1D9" stroke-width="1.8"/>
+  <text x="160" y="614" font-size="11" font-weight="700" fill="#58A6FF">10 · SERVE</text>
+  <text x="260" y="614" font-size="14" font-weight="600" fill="#E6EDF3">FastAPI · loads exactly one production bundle · non-root container</text>
+  <text x="160" y="636" font-size="11" fill="#9BA7B4">/health liveness · /ready 503 until usable · /predict · /predict/batch · /metrics · no raw request text is ever logged</text>
+
+  <!-- CI band -->
+  <rect x="40" y="672" width="900" height="34" rx="8" fill="#1C2128" stroke="#6E7681" stroke-width="1.2"/>
+  <text x="60" y="694" font-size="11" font-weight="700" fill="#C9D1D9">CI</text>
+  <text x="100" y="694" font-size="11" fill="#9BA7B4">lint + offline tests  ·  reference run on the licensed dataset  ·  container build, readiness and a real HTTP prediction</text>
+</svg>
