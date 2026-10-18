@@ -48,11 +48,11 @@ Reference run, UCI Sentiment Labelled Sentences, 3,000 rows split 1,800 / 600 / 
 | Majority-class baseline | 0.5000 | **0.5000** |
 | Margin over baseline | 0.3117 | **0.3067** |
 
-Cross-validated weighted F1 on the training split: 0.7915 ± 0.0132.
+Cross-validated weighted F1 on the training split: 0.7915 plus or minus 0.0132.
 
 That is an ordinary result for TF-IDF plus logistic regression on short sentences:
 well above the 0.5 baseline, nowhere near a fine-tuned transformer. The test split
-is 600 rows, so the confidence interval on accuracy is roughly ±3 points, and a
+is 600 rows, so the confidence interval on accuracy is roughly plus or minus 3 points, and a
 one-point difference between models on this split is noise. The three places the
 metric was measured agree to within 0.020, and the test result sits inside the
 cross-validation spread.
@@ -227,7 +227,7 @@ extractor, which is a different project.
 
 - A reference implementation, not a deployed product. No production traffic has ever
   hit it.
-- 600 test rows, so the confidence interval on accuracy is roughly ±3 points. A
+- 600 test rows, so the confidence interval on accuracy is roughly plus or minus 3 points. A
   one-point difference between models on this split is noise.
 - `docs/figures/02_evaluation_curves.png` is drawn from a six-row fixture and its
   subtitle claims the 600-row held-out split. It needs regenerating from a real run.
@@ -271,5 +271,5 @@ which requires attribution:
 
 ## Author
 
-**Mohd Zamin Quadri**, [GitHub](https://github.com/mzquadri) ·
+**Mohd Zamin Quadri**, [GitHub](https://github.com/mzquadri) and
 [LinkedIn](https://www.linkedin.com/in/mohdzaminquadri/)
