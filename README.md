@@ -35,6 +35,42 @@ mechanism stops working:
   <img src="docs/diagrams/pipeline.svg" alt="End-to-end MLOps lifecycle: acquire, validate, split, features, train, bundle, evaluate, gate, register, serve">
 </picture>
 
+The two places the run can stop, drawn as decisions rather than as boxes in a line,
+because stopping is the behaviour that matters. Thresholds are read from
+`configs/train_config.yaml`; the values beside them are the reference run:
+
+```mermaid
+flowchart TB
+    D["3,000 labelled rows<br/>pinned by SHA-256"] --> DV{"input data checks"}
+    DV -->|"nulls > 5%, duplicates > 10%<br/>or smaller class < 10%"| STOP["run stops<br/>nothing is trained"]
+    DV -->|"within bounds"| SP["stratified split<br/>1,800 / 600 / 600, seed 42"]
+
+    SP --> TR["fit on train<br/>thresholds from validation only"]
+    TR --> BN["bundle<br/>model, transformers, metrics, lineage"]
+    BN --> G{"promotion gate<br/>all four, on the test split"}
+
+    G -->|"any check fails"| REJ["not promoted<br/>pipeline exits non-zero"]
+    G -->|"all pass"| PR["registered and promoted"]
+    PR --> SV["served from the bundle<br/>FastAPI"]
+
+    linkStyle 0,2,3,4,5 stroke:#2563EB
+    linkStyle 1,6 stroke:#DC2626
+    linkStyle 7,8 stroke:#059669
+```
+
+| Gate check | Threshold | Reference run |
+|---|---|---|
+| `accuracy` | >= 0.75 | 0.8067 |
+| `f1_weighted` | >= 0.75 | 0.8067 |
+| `accuracy_over_baseline` | >= 0.20 | **0.3067** |
+| `latency_p95` | <= 100 ms | 0.067 ms |
+
+`all()` over the four, so one failure refuses the promotion. The third is the one that
+carries the meaning: an accuracy floor says nothing without the class balance, and a
+margin over the majority-class baseline stays honest if the data ever becomes imbalanced.
+The latency check is an in-process single-row regression guard, not a service level
+objective.
+
 ## The result
 
 Reference run, UCI Sentiment Labelled Sentences, 3,000 rows split 1,800 / 600 / 600.

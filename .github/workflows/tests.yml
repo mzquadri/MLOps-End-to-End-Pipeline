@@ -1,8 +1,17 @@
-name: CI
+﻿name: CI
 
 on:
   push:
   pull_request:
+
+# Least privilege, per GitHub's "Security hardening for GitHub Actions". Nothing here
+# writes to the repository: the jobs install, lint, test, run the pipeline against a
+# cached dataset, build an image locally and upload one run summary as an artifact.
+# `actions/upload-artifact` needs no repository write, so `contents: read` is the whole
+# requirement. Declaring it means a change to the repository or organisation default
+# cannot widen what these three jobs get.
+permissions:
+  contents: read
 
 # Three jobs with deliberately different dependencies, so a failure says something
 # specific: the code broke, the reference run stopped reproducing, or the container
@@ -13,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -34,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -81,8 +90,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
