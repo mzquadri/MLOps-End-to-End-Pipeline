@@ -55,7 +55,7 @@ jobs:
       # 84 KB, keyed by the pinned checksum, so a cache hit is provably the right bytes
       # and a changed checksum can never silently reuse the old archive.
       - name: Cache the dataset archive
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/cache
           key: uci-sentiment-afc26626d710899948693e1a61405dce197f57ffa719fa1130d346b4cc095343
@@ -77,7 +77,7 @@ jobs:
 
       - name: Upload the run summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reference-run
           path: |

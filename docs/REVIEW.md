@@ -61,11 +61,26 @@ repository default, but a change to the repository or organisation default would
 silently. `permissions: contents: read` is now set at workflow level. That is the whole
 requirement even with `actions/upload-artifact`, which needs no repository write.
 
-### 2. Two actions on deprecated Node
+### 2. Four actions on deprecated Node, not two
 
 `actions/checkout@v4` and `actions/setup-python@v5` target Node 20, which GitHub has
-deprecated and is force-running on Node 24. Both moved to `@v7`. `actions/cache@v4` and
-`actions/upload-artifact@v4` are already current and were left alone.
+deprecated and is force-running on Node 24. Both moved to `@v7`.
+
+That was the whole fix on the first attempt, and it was incomplete. The CI run afterwards
+still carried a Node 20 annotation, naming **`actions/cache@v4` and
+`actions/upload-artifact@v4`** as well. Assuming a `@v4` must be current because a
+different action's `@v4` was stale is exactly the guess that annotation exists to catch.
+The majors were then read from the GitHub API instead of guessed a second time:
+
+| Action | Was | Now | Latest release |
+|---|---|---|---|
+| `actions/checkout` | v4 | **v7** | v7.0.1 |
+| `actions/setup-python` | v5 | **v7** | v7.1.0 |
+| `actions/cache` | v4 | **v6** | v6.1.0 |
+| `actions/upload-artifact` | v4 | **v7** | v7.0.2 |
+
+All four current majors differ, which is why none of them could be inferred from any of
+the others.
 
 ### 3. A stale branch on the remote as well as locally
 
