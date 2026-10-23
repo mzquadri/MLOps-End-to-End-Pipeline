@@ -3,12 +3,19 @@
 ```bash
 pip install -r requirements-dev.txt
 
-pytest -m "not docker"          # everything except the container tests
-pytest tests/test_docker.py -m docker   # needs a running Docker daemon
+pytest -m "not docker and not network"  # 153 of 164: no network, no daemon
+pytest -m network                       # 5 tests, downloads the licensed dataset
+pytest tests/test_docker.py -m docker   # 6 tests, needs a running Docker daemon
 ruff check .
 ```
 
-99 tests: 93 offline, 6 container.
+**164 tests: 153 offline, 5 network, 6 container.** Counted with
+`pytest --collect-only -q`, which is the only number worth quoting here because
+parametrised cases make a count of `def test_` wrong.
+
+This document said "99 tests: 93 offline, 6 container" until 2026-10-23, which was right
+once and had been left behind by three whole test files. The README was correct throughout;
+this page was the stale one.
 
 ## Layers
 
@@ -18,9 +25,15 @@ ruff check .
 | `test_data_pipeline.py` | 22 | Cleaning, hashing, validation checks and the failure policy |
 | `test_model.py` | 16 | Model construction, feature store, training metrics, gate arithmetic, registry |
 | `test_model_bundle.py` | 12 | Atomicity, tampering, rollback, crash recovery, forged gates |
+| `test_bundle_provenance.py` | 31 | What a bundle records about where it came from, and refusing one that cannot prove it |
+| `test_training_serving_parity.py` | 26 | That the served path and the training path agree, feature by feature |
 | `test_integration.py` | 12 | The whole lifecycle: split discipline, leakage, gate refusal, reproducibility |
-| `test_api.py` | 16 | Readiness semantics, real bundle loading, prediction, privacy |
-| `test_docker.py` | 6 | Image contents, non-root, healthcheck, HTTP prediction from a container |
+| `test_api.py` | 19 | Readiness semantics, real bundle loading, prediction, privacy |
+| `test_split_contamination.py` | 5 | **`network`.** Duplicate texts spanning two splits, measured against the licensed data |
+| `test_docker.py` | 6 | **`docker`.** Image contents, non-root, healthcheck, HTTP prediction from a container |
+
+That sums to 164. The three files this table used to omit are the two largest after
+`test_data_pipeline.py` and the whole of the `network` marker.
 
 ## The tests that exist because something was wrong
 
@@ -65,8 +78,12 @@ the service that ships.
 
 ## Test data policy
 
-Tests use the deterministic synthetic fixture and never touch the network. That is what
-keeps `pytest -m "not docker"` fast (about 13 seconds) and runnable anywhere.
+The 153 offline tests use the deterministic synthetic fixture and never touch the network.
+That is what keeps `pytest -m "not docker and not network"` fast and runnable anywhere.
+
+**Both markers have to be excluded, not just `docker`.** This page used to give
+`-m "not docker"`, which selects the five `network` tests and makes the "never touches the
+network" claim false for the command printed directly above it.
 
 The download path is still tested, `test_datasets.py` builds an archive in a temp
 directory and points a `DatasetSpec` at it via a `file://` URL, so checksum verification,
@@ -84,5 +101,11 @@ docker     builds and runs the container image
 network    downloads the licensed dataset
 ```
 
-Both are deselected by default in local runs via `-m "not docker"`. The `network` marker
-is declared for the same reason but is currently unused, since no test needs the network.
+Deselect both in a local run: `-m "not docker and not network"`.
+
+This page previously said the `network` marker "is currently unused, since no test needs
+the network". That is no longer true. `tests/test_split_contamination.py` sets
+`pytestmark = pytest.mark.network` at module level and holds **five** tests, and CI runs
+them in the `reference-run` job under the step "Split contamination stays within the
+measured bound" — which is the one job that has the licensed dataset, so it is the only
+place the split can be measured against it.

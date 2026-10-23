@@ -82,7 +82,48 @@ The majors were then read from the GitHub API instead of guessed a second time:
 All four current majors differ, which is why none of them could be inferred from any of
 the others.
 
-### 3. A stale branch on the remote as well as locally
+### 3. `docs/TESTING.md` was stale, and the README was not
+
+Found after the first change, while checking what the portfolio site mirrors. The counts
+in `docs/TESTING.md` were two generations behind, and one sentence in it was simply
+false.
+
+Authoritative counts, from `pytest --collect-only -q`, which is the only honest way to
+count these because parametrised cases make a tally of `def test_` wrong:
+
+| | TESTING.md said | Actual |
+|---|---|---|
+| Total | 99 | **164** |
+| Offline | 93 | **153** |
+| Container (`docker`) | 6 | 6 (correct) |
+| Network (`network`) | not counted | **5** |
+| `test_api.py` | 16 | **19** |
+| `test_bundle_provenance.py` | absent from the table | **31** |
+| `test_training_serving_parity.py` | absent from the table | **26** |
+| `test_split_contamination.py` | absent from the table | **5** |
+
+**The README was right all along**: it states "153 of 164 tests", "5 tests, downloads the
+licensed dataset" and "6 tests, needs a Docker daemon", and "164 tests across unit,
+integration and container layers". Only `docs/TESTING.md` had drifted.
+
+Two further errors in the same file, both about the `network` marker:
+
+- It gave the quick-start command as `pytest -m "not docker"`, which **selects** the five
+  network tests, directly under a heading promising tests that "never touch the network".
+  The correct command, and the one the README uses, is
+  `-m "not docker and not network"`.
+- It stated the `network` marker "is currently unused, since no test needs the network".
+  `tests/test_split_contamination.py` sets `pytestmark = pytest.mark.network` at module
+  level and holds five tests, and CI runs them in the `reference-run` job under "Split
+  contamination stays within the measured bound".
+
+This one mattered beyond the repository: `ZQ/tools/gen-mlops-world.py` hard-codes
+`tests = { total: 99, offline: 93, container: 6 }` with the comment "as the README states
+them", which is where those numbers came from. The generator derives everything else from
+the two machine-readable inputs; the test counts were the one literal, and they were
+copied from this page rather than from the README.
+
+### 4. A stale branch on the remote as well as locally
 
 `feature/atomic-model-bundles` had **zero** commits not already on `main`, its tip is a
 clean ancestor of `main`, and its pull request was merged on 2026-08-15. `main` was 26
