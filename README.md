@@ -5,6 +5,16 @@
 
 # MLOps End-to-End Pipeline
 
+<!-- project-story:start -->
+<p align="center"><img src="docs/assets/architecture-animated.svg" alt="Animated architecture diagram of this project" width="100%"></p>
+
+| Problem | Why it mattered | Result |
+|---|---|---|
+| A perfect 1.000 score came from duplicated rows. | Every stage existed, and nothing could stop a bad model. | **0.8795** held-out ROC-AUC on licensed data, behind a release gate |
+
+[See it animated on mzquadri.de](https://mzquadri.de/work/mlops-reference-pipeline)
+<!-- project-story:end -->
+
 A complete ML lifecycle for one small text-classification task: acquire and verify
 data, validate it, fit features without leaking, train, evaluate behind a promotion
 gate, write an immutable bundle, serve it, and run all of it in CI. The model is

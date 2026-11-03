@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 434" role="img" aria-label="One fitting surface, and a gate that stops the run">
+<title>One fitting surface, and a gate that stops the run</title>
+<style>
+    :root{--bg:#f7f8fa;--ink:#1c2430;--soft:#5a6675;--line:#c9d1da;--box:#ffffff;--a:#4e9a92}
+    @media(prefers-color-scheme:dark){:root{--bg:#10151c;--ink:#e6ebf2;--soft:#9fb0c2;--line:#3a4654;--box:#18202a;--a:#82c0b8}}
+    text{font-family:Archivo,'Segoe UI',Arial,sans-serif}
+    .t{fill:var(--ink);font-size:13px;font-weight:600}.n{fill:var(--soft);font-size:10.5px}.l{fill:var(--soft);font-size:10px}
+    rect.b{fill:var(--box);stroke:var(--line);stroke-width:1.2}
+    .e{fill:none;stroke:var(--a);stroke-width:1.6;stroke-dasharray:100;stroke-dashoffset:100}
+    .e.f{stroke:var(--soft)}
+    .g{opacity:0;transform-box:fill-box;transform-origin:center}
+    .p{fill:var(--a);opacity:0}
+    @keyframes draw{0%{stroke-dashoffset:100}35%,88%{stroke-dashoffset:0}100%{stroke-dashoffset:100}}
+    @keyframes rise{0%{opacity:0;transform:scale(.9)}14%,90%{opacity:1;transform:none}100%{opacity:0}}
+    @keyframes run{0%{offset-distance:0;opacity:0}5%{opacity:1}30%{opacity:1}36%,100%{offset-distance:100%;opacity:0}}
+    @keyframes lit{0%,100%{stroke:var(--line);stroke-width:1.2}50%{stroke:var(--a);stroke-width:2.6}}
+    .e{animation:draw 9s ease-in-out infinite both;animation-delay:calc(var(--i)*.14s)}
+    .g{animation:rise 9s ease-out infinite both;animation-delay:calc(var(--i)*.14s)}
+    .g rect.b{animation:lit 2.2s ease-in-out 1 both;animation-iteration-count:infinite;animation-delay:calc(var(--i)*.35s)}
+    .p{animation:run 9s linear infinite both;animation-delay:calc(1s + var(--i)*.14s)}
+    @media(prefers-reduced-motion:reduce){.e,.g,.g rect.b{animation:none;opacity:1;stroke-dashoffset:0}.p{display:none}}
+    </style>
+<defs><marker id="a" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto"><path d="M0 0L9 3.5L0 7Z" fill="var(--a)"/></marker></defs>
+<rect width="100%" height="100%" rx="10" fill="var(--bg)"/>
+<g transform="translate(0 30)">
+<text class="t" x="26" y="-8" style="font-size:15px">One fitting surface, and a gate that stops the run</text>
+<path class="e" d="M 214 177 L 278 177" pathLength="100" marker-end="url(#a)" style="--i:0"/>
+<circle class="p" r="4" style="--i:0;offset-path:path('M 214 177 L 278 177')"/>
+<path class="e" d="M 466 177 L 498 177 L 498 65 L 530 65" pathLength="100" marker-end="url(#a)" style="--i:1"/>
+<circle class="p" r="4" style="--i:1;offset-path:path('M 466 177 L 498 177 L 498 65 L 530 65')"/>
+<text class="l" x="482" y="168" text-anchor="middle">train only</text>
+<path class="e" d="M 466 177 L 498 177 L 498 289 L 530 289" pathLength="100" marker-end="url(#a)" style="--i:2"/>
+<circle class="p" r="4" style="--i:2;offset-path:path('M 466 177 L 498 177 L 498 289 L 530 289')"/>
+<path class="e" d="M 624 104 L 624 250" pathLength="100" marker-end="url(#a)" style="--i:3"/>
+<circle class="p" r="4" style="--i:3;offset-path:path('M 624 104 L 624 250')"/>
+<text class="l" x="632" y="177" text-anchor="start">fitted state</text>
+<path class="e" d="M 718 65 L 782 65" pathLength="100" marker-end="url(#a)" style="--i:4"/>
+<circle class="p" r="4" style="--i:4;offset-path:path('M 718 65 L 782 65')"/>
+<path class="e" d="M 718 289 L 876 289 L 876 177 L 1034 177" pathLength="100" marker-end="url(#a)" style="--i:5"/>
+<circle class="p" r="4" style="--i:5;offset-path:path('M 718 289 L 876 289 L 876 177 L 1034 177')"/>
+<text class="l" x="797" y="280" text-anchor="middle">held-out matrices</text>
+<path class="e" d="M 970 65 L 1002 65 L 1002 177 L 1034 177" pathLength="100" marker-end="url(#a)" style="--i:6"/>
+<circle class="p" r="4" style="--i:6;offset-path:path('M 970 65 L 1002 65 L 1002 177 L 1034 177')"/>
+<text class="l" x="986" y="56" text-anchor="middle">candidate</text>
+<path class="e" d="M 1222 177 L 1254 177 L 1254 65 L 1286 65" pathLength="100" marker-end="url(#a)" style="--i:7"/>
+<circle class="p" r="4" style="--i:7;offset-path:path('M 1222 177 L 1254 177 L 1254 65 L 1286 65')"/>
+<text class="l" x="1238" y="168" text-anchor="middle">every check passes</text>
+<path class="e" d="M 1222 177 L 1254 177 L 1254 289 L 1286 289" pathLength="100" marker-end="url(#a)" style="--i:8"/>
+<circle class="p" r="4" style="--i:8;offset-path:path('M 1222 177 L 1254 177 L 1254 289 L 1286 289')"/>
+<path class="e" d="M 1380 104 L 1380 138" pathLength="100" marker-end="url(#a)" style="--i:9"/>
+<circle class="p" r="4" style="--i:9;offset-path:path('M 1380 104 L 1380 138')"/>
+<text class="l" x="1388" y="121" text-anchor="start">promote</text>
+<path class="e f" d="M 1380 216 L 1380 362 L 624 362 L 624 328" pathLength="100" marker-end="url(#a)" style="--i:10"/>
+<circle class="p" r="4" style="--i:10;offset-path:path('M 1380 216 L 1380 362 L 624 362 L 624 328')"/>
+<text class="l" x="1002" y="353" text-anchor="middle">same transformers</text>
+<g class="g" style="--i:0"><rect class="b" x="26" y="138" width="188" height="78" rx="6"/><text class="t" x="40" y="164">Licensed data</text>
+<text class="n" x="40" y="184">Hashed and checked for</text>
+<text class="n" x="40" y="197">duplicates before anything…</text>
+</g>
+<g class="g" style="--i:1"><rect class="b" x="278" y="138" width="188" height="78" rx="6"/><text class="t" x="292" y="164">Partition</text>
+<text class="n" x="292" y="184">Train, validation and test,</text>
+<text class="n" x="292" y="197">fixed before a feature exists.</text>
+</g>
+<g class="g" style="--i:2"><rect class="b" x="530" y="26" width="188" height="78" rx="6"/><text class="t" x="544" y="52">Fit transformers</text>
+<text class="n" x="544" y="72">The only place anything is</text>
+<text class="n" x="544" y="85">fitted. Train partition only.</text>
+</g>
+<g class="g" style="--i:3"><rect class="b" x="530" y="250" width="188" height="78" rx="6"/><text class="t" x="544" y="276">Transform</text>
+<text class="n" x="544" y="296">Cannot fit. Validation, test</text>
+<text class="n" x="544" y="309">and serving share this path.</text>
+</g>
+<g class="g" style="--i:4"><rect class="b" x="782" y="26" width="188" height="78" rx="6"/><text class="t" x="796" y="52">Train candidate</text>
+<text class="n" x="796" y="72">Produces a bundle with</text>
+<text class="n" x="796" y="85">checksummed artifacts.</text>
+</g>
+<g class="g" style="--i:5"><rect class="b" x="1034" y="138" width="188" height="78" rx="6"/><text class="t" x="1048" y="164">Promotion gate</text>
+<text class="n" x="1048" y="184">A conjunction of checks on</text>
+<text class="n" x="1048" y="197">held-out metrics and latency.</text>
+</g>
+<g class="g" style="--i:6"><rect class="b" x="1286" y="26" width="188" height="78" rx="6"/><text class="t" x="1300" y="52">Registry</text>
+<text class="n" x="1300" y="72">Registered as staging, then</text>
+<text class="n" x="1300" y="85">transitioned to production.</text>
+</g>
+<g class="g" style="--i:7"><rect class="b" x="1286" y="138" width="188" height="78" rx="6"/><text class="t" x="1300" y="164">Prediction service</text>
+<text class="n" x="1300" y="184">Loads only a bundle whose gate</text>
+<text class="n" x="1300" y="197">flag and checksums verify.</text>
+</g>
+<g class="g" style="--i:8"><rect class="b" x="1286" y="250" width="188" height="78" rx="6"/><text class="t" x="1300" y="276">Gate failure</text>
+<text class="n" x="1300" y="296">The run raises and stops.</text>
+<text class="n" x="1300" y="309">Nothing is registered, and…</text>
+</g>
+</g></svg>
